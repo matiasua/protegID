@@ -17,7 +17,7 @@ Nginx recibe trafico HTTP en `localhost:8080`.
 - `/` se enruta hacia `protegid-web:3000`.
 - `/api/*` se enruta hacia `protegid-api:8000`.
 
-PostgreSQL, Redis y MinIO quedan disponibles para funcionalidades actuales y futuras. Alembic esta configurado y el backend ya incluye la tabla de negocio `users` para la base de autenticacion.
+PostgreSQL, Redis y MinIO quedan disponibles para funcionalidades actuales y futuras. Alembic esta configurado y el backend ya incluye las tablas de negocio `users` y `devices`.
 
 ## Auth Foundation
 
@@ -34,9 +34,37 @@ El backend incluye la base de autenticacion de Sprint 2:
 
 `GET /api/auth/me` requiere un token Bearer valido. No existe refresh token, recuperacion de password ni MFA en el estado actual.
 
+## Device Foundation
+
+El backend incluye la base de dispositivos de Sprint 3:
+
+- Modelo SQLAlchemy `Device`.
+- Tabla `devices` gestionada por Alembic.
+- Relacion nullable `devices.user_id -> users.id` para permitir dispositivos pendientes antes de ser activados por un usuario.
+- `public_id` unico y visible con formato `PID-XXXXXXXXXX`.
+- El alfabeto de `public_id` evita caracteres confusos: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
+- `public_id` no es secuencial y no usa el UUID interno completo como identificador publico.
+
+Estados actuales de `Device`:
+
+- `pending_activation`
+- `active`
+- `disabled`
+- `lost`
+
+Endpoints actuales de devices:
+
+- `GET /api/devices`
+- `POST /api/devices/activate`
+- `POST /api/admin/devices`
+
+`GET /api/devices` requiere token Bearer y solo lista dispositivos del usuario autenticado. `POST /api/devices/activate` requiere token Bearer y activa un dispositivo `pending_activation` para el usuario autenticado. `POST /api/admin/devices` requiere token Bearer y `role=admin`.
+
 ## Limites de esta etapa
 
-No se implementan devices, QR, perfil medico, contactos de emergencia, notificaciones, refresh token, recuperacion de password ni MFA.
+No hay generacion de QR, escritura NFC, vista publica `/p/{public_id}`, perfil medico, contactos de emergencia, notificaciones, logica de escaneo, refresh token, recuperacion de password ni MFA.
+
+`device_type="qr_nfc_tag"` existe solo como base del modelo de dispositivo. No representa una implementacion actual de QR ni NFC.
 
 ## CodeGraph
 
