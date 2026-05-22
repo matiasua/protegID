@@ -1,5 +1,6 @@
 """Modelos SQLAlchemy de ProtegID."""
 
+from app.models.device import Device
 from app.models.user import User
 
-__all__ = ["User"]
+__all__ = ["Device", "User"]

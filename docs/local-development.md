@@ -28,6 +28,9 @@ Servicios principales:
 - Auth register: `http://localhost:8080/api/auth/register`
 - Auth login: `http://localhost:8080/api/auth/login`
 - Auth me: `http://localhost:8080/api/auth/me`
+- Devices list: `http://localhost:8080/api/devices`
+- Device activate: `http://localhost:8080/api/devices/activate`
+- Admin device create: `http://localhost:8080/api/admin/devices`
 - Web directa en desarrollo: `http://localhost:3000`
 - API directa en desarrollo: `http://localhost:8000/api/health`
 - MinIO console: `http://localhost:9001`
@@ -78,4 +81,31 @@ Endpoints actuales:
 
 `GET /api/auth/me` requiere header `Authorization: Bearer <access_token>`.
 
-No hay refresh token, recuperacion de password ni MFA. Tampoco hay devices, QR, perfil medico, contactos de emergencia ni notificaciones.
+No hay refresh token, recuperacion de password ni MFA.
+
+## Device Foundation
+
+La API incluye la base de dispositivos:
+
+- Modelo `Device`.
+- Tabla `devices`.
+- Relacion nullable `devices.user_id -> users.id`.
+- `public_id` con formato `PID-XXXXXXXXXX`.
+- Alfabeto seguro para `public_id`: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
+
+Estados actuales:
+
+- `pending_activation`
+- `active`
+- `disabled`
+- `lost`
+
+Endpoints protegidos:
+
+- `GET /api/devices`: requiere Bearer token y solo lista devices del usuario autenticado.
+- `POST /api/devices/activate`: requiere Bearer token y activa un device `pending_activation` por `public_id`.
+- `POST /api/admin/devices`: requiere Bearer token y `role=admin`; crea un device `pending_activation`.
+
+`public_id` no es secuencial y no expone el UUID interno completo.
+
+Limites actuales: no hay generacion de QR, escritura NFC, vista publica `/p/{public_id}`, perfil medico, contactos de emergencia, notificaciones ni logica de escaneo. `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
