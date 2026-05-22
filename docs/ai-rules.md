@@ -30,6 +30,8 @@ Auth Foundation ya existe e incluye modelo `User`, tabla `users`, hashing de pas
 
 Device Foundation ya existe e incluye modelo `Device`, tabla `devices`, relacion nullable `devices.user_id -> users.id`, generacion de `public_id` con formato `PID-XXXXXXXXXX` y endpoints protegidos basicos de devices.
 
+Public Profile Foundation ya existe e incluye modelo `EmergencyProfile`, tabla `emergency_profiles`, relacion unica `emergency_profiles.device_id -> devices.id`, endpoints privados para ver/crear/editar el perfil de un device y endpoint publico de lectura por `public_id`.
+
 Estados de device existentes:
 
 - `pending_activation`
@@ -43,6 +45,14 @@ Endpoints de devices existentes:
 - `POST /api/devices/activate`
 - `POST /api/admin/devices`
 
-No implementar QR, NFC, vista publica `/p/{public_id}`, perfil medico, contactos de emergencia, notificaciones, logica de escaneo, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
+Endpoints de perfiles de emergencia existentes:
+
+- `GET /api/devices/{device_id}/emergency-profile`
+- `PUT /api/devices/{device_id}/emergency-profile`
+- `GET /api/public/profiles/{public_id}`
+
+El endpoint publico no requiere autenticacion, busca por `Device.public_id`, solo responde si el device esta `active`, el perfil tiene `is_public == true` y `deleted_at is null`, y no expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
+
+No implementar QR, NFC, frontend publico `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
 
 `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.

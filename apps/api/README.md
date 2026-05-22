@@ -12,6 +12,9 @@ Backend FastAPI para ProtegID.
 - `GET /api/devices`
 - `POST /api/devices/activate`
 - `POST /api/admin/devices`
+- `GET /api/devices/{device_id}/emergency-profile`
+- `PUT /api/devices/{device_id}/emergency-profile`
+- `GET /api/public/profiles/{public_id}`
 
 ## Auth Foundation
 
@@ -46,7 +49,28 @@ Endpoints protegidos:
 - `POST /api/devices/activate`: requiere Bearer token y activa un device `pending_activation` por `public_id`.
 - `POST /api/admin/devices`: requiere Bearer token y `role=admin`; crea un device `pending_activation`.
 
-Limites actuales: no hay generacion de QR, escritura NFC, vista publica `/p/{public_id}`, perfil medico, contactos de emergencia, notificaciones ni logica de escaneo. `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
+## Public Profile Foundation
+
+El backend incluye modelo `EmergencyProfile`, tabla `emergency_profiles` y relacion unica `emergency_profiles.device_id -> devices.id`.
+
+Endpoints privados:
+
+- `GET /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida que el device pertenezca al usuario autenticado y devuelve el perfil completo.
+- `PUT /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida que el device pertenezca al usuario autenticado y crea o actualiza el perfil.
+
+Endpoint publico:
+
+- `GET /api/public/profiles/{public_id}`: no requiere autenticacion y devuelve solo campos publicos del perfil.
+
+Reglas del endpoint publico:
+
+- Busca por `Device.public_id`.
+- Solo responde si `device.status == "active"`.
+- Solo responde si `emergency_profile.is_public == true`.
+- Solo responde si `emergency_profile.deleted_at is null`.
+- No expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
+
+Limites actuales: no hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos ni subida de archivos medicos. `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
 
 ## Ejemplos curl
 
@@ -98,6 +122,28 @@ curl -X POST http://localhost:8000/api/admin/devices \
   -d '{"label":"Test device"}'
 ```
 
+Get private emergency profile:
+
+```bash
+curl http://localhost:8000/api/devices/<device_id>/emergency-profile \
+  -H 'Authorization: Bearer <access_token>'
+```
+
+Create or update private emergency profile:
+
+```bash
+curl -X PUT http://localhost:8000/api/devices/<device_id>/emergency-profile \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"display_name":"Example User","blood_type":"O+","is_public":true}'
+```
+
+Get public emergency profile:
+
+```bash
+curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
+```
+
 ## Limites actuales
 
-No hay generacion de QR, escritura NFC, vista publica `/p/{public_id}`, perfil medico, contactos de emergencia, notificaciones ni logica de escaneo.
+No hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos ni subida de archivos medicos.

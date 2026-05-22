@@ -31,6 +31,8 @@ Servicios principales:
 - Devices list: `http://localhost:8080/api/devices`
 - Device activate: `http://localhost:8080/api/devices/activate`
 - Admin device create: `http://localhost:8080/api/admin/devices`
+- Private emergency profile: `http://localhost:8080/api/devices/{device_id}/emergency-profile`
+- Public emergency profile: `http://localhost:8080/api/public/profiles/{public_id}`
 - Web directa en desarrollo: `http://localhost:3000`
 - API directa en desarrollo: `http://localhost:8000/api/health`
 - MinIO console: `http://localhost:9001`
@@ -108,4 +110,29 @@ Endpoints protegidos:
 
 `public_id` no es secuencial y no expone el UUID interno completo.
 
-Limites actuales: no hay generacion de QR, escritura NFC, vista publica `/p/{public_id}`, perfil medico, contactos de emergencia, notificaciones ni logica de escaneo. `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
+## Public Profile Foundation
+
+La API incluye la base de perfiles publicos de emergencia:
+
+- Modelo `EmergencyProfile`.
+- Tabla `emergency_profiles`.
+- Relacion unica `emergency_profiles.device_id -> devices.id`.
+
+Endpoints protegidos:
+
+- `GET /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida ownership del device y devuelve el perfil completo del dueno.
+- `PUT /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida ownership del device y crea o actualiza el perfil.
+
+Endpoint publico:
+
+- `GET /api/public/profiles/{public_id}`: no requiere autenticacion y devuelve solo campos publicos del perfil.
+
+Reglas del endpoint publico:
+
+- Busca por `Device.public_id`.
+- Solo responde si `device.status == "active"`.
+- Solo responde si `emergency_profile.is_public == true`.
+- Solo responde si `emergency_profile.deleted_at is null`.
+- No expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
+
+Limites actuales: no hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos ni subida de archivos medicos. `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
