@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.egg-info/
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Docker/local data
+.docker/
+docker-data/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# CodeGraph local index, if initialized later
+.codegraph/

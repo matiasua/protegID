@@ -1,0 +1,27 @@
+services:
+  protegid-web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: dev
+    command: npm run dev -- --hostname 0.0.0.0 --port 3000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - ./apps/web:/app
+      - protegid-web-node-modules:/app/node_modules
+
+  protegid-api:
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./apps/api:/app
+
+  protegid-worker:
+    command: python -m worker.main
+    volumes:
+      - ./apps/api:/app
+
+volumes:
+  protegid-web-node-modules:
