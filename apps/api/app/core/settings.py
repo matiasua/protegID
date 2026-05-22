@@ -19,6 +19,8 @@ class Settings:
     s3_access_key_id: str
     s3_secret_access_key: str
     minio_bucket: str
+    public_app_url: str
+    public_profile_path: str
     jwt_secret_key: str
     jwt_algorithm: str
     access_token_expire_minutes: int
@@ -33,6 +35,8 @@ class Settings:
         self.s3_access_key_id = getenv("S3_ACCESS_KEY_ID", "")
         self.s3_secret_access_key = getenv("S3_SECRET_ACCESS_KEY", "")
         self.minio_bucket = getenv("MINIO_BUCKET", "")
+        self.public_app_url = getenv("PUBLIC_APP_URL", "http://localhost:8080")
+        self.public_profile_path = getenv("PUBLIC_PROFILE_PATH", "/p")
         self.jwt_secret_key = getenv("JWT_SECRET_KEY", "")
         self.jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
         self.access_token_expire_minutes = int(
