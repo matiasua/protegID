@@ -1,10 +1,11 @@
 """Conexión y health check básico de PostgreSQL."""
 
+from collections.abc import Generator
 from functools import lru_cache
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.settings import get_settings
 
@@ -27,6 +28,17 @@ def _get_database_url() -> str:
 @lru_cache
 def get_engine() -> Engine:
     return create_engine(_get_database_url(), pool_pre_ping=True)
+
+
+@lru_cache
+def get_session_factory() -> sessionmaker[Session]:
+    return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False)
+
+
+def get_session() -> Generator[Session, None, None]:
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        yield session
 
 
 def ping_database() -> bool:
