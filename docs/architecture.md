@@ -81,11 +81,32 @@ Endpoint publico de perfil de emergencia:
 
 El endpoint publico no requiere autenticacion. Busca por `Device.public_id` y solo responde si el device esta `active`, el perfil tiene `is_public == true` y `deleted_at is null`. La respuesta publica no expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
 
+## QR Foundation
+
+El backend incluye la base de QR de Sprint 5:
+
+- Variables de configuracion `PUBLIC_APP_URL` y `PUBLIC_PROFILE_PATH`.
+- Helper `build_public_profile_url(public_id)` para construir la URL publica estable del perfil.
+- Generacion de QR PNG en memoria mediante `qrcode[pil]`.
+- Persistencia del QR en MinIO/S3 compatible.
+- Object key estable por device: `qr/devices/{public_id}.png`.
+
+El QR no contiene datos medicos. El QR contiene solo la URL publica con formato `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`. En local, un ejemplo es `http://localhost:8080/p/PID-XXXXXXXXXX`.
+
+Endpoints admin de QR:
+
+- `POST /api/admin/devices/{device_id}/qr`
+- `GET /api/admin/devices/{device_id}/qr`
+
+Ambos endpoints requieren token Bearer y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
+
 ## Limites de esta etapa
 
-No hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
+No hay NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
 
-`device_type="qr_nfc_tag"` existe solo como base del modelo de dispositivo. No representa una implementacion actual de QR ni NFC.
+Sprint 5 no agrega nuevas tablas ni nuevas migraciones.
+
+`device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
 
 ## CodeGraph
 

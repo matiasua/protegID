@@ -31,6 +31,8 @@ Servicios principales:
 - Devices list: `http://localhost:8080/api/devices`
 - Device activate: `http://localhost:8080/api/devices/activate`
 - Admin device create: `http://localhost:8080/api/admin/devices`
+- Admin device QR status: `http://localhost:8080/api/admin/devices/{device_id}/qr`
+- Admin device QR generate: `http://localhost:8080/api/admin/devices/{device_id}/qr`
 - Private emergency profile: `http://localhost:8080/api/devices/{device_id}/emergency-profile`
 - Public emergency profile: `http://localhost:8080/api/public/profiles/{public_id}`
 - Web directa en desarrollo: `http://localhost:3000`
@@ -46,6 +48,15 @@ La API requiere estas variables para emitir y validar access tokens:
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
 
 Los valores de `.env.example` son solo para desarrollo local.
+
+## Variables publicas para QR
+
+La API usa estas variables para construir la URL publica que se codifica dentro del QR:
+
+- `PUBLIC_APP_URL`: origen publico de la aplicacion. Valor local: `http://localhost:8080`.
+- `PUBLIC_PROFILE_PATH`: path publico de perfil. Valor local: `/p`.
+
+El helper `build_public_profile_url(public_id)` construye URLs con formato `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
 
 ## Comandos utiles
 
@@ -135,4 +146,22 @@ Reglas del endpoint publico:
 - Solo responde si `emergency_profile.deleted_at is null`.
 - No expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
 
-Limites actuales: no hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos ni subida de archivos medicos. `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
+## QR Foundation
+
+La API incluye la base de QR:
+
+- Dependencia `qrcode[pil]`.
+- Generacion de QR PNG en memoria.
+- Persistencia del PNG en MinIO/S3 compatible.
+- Object key estable: `qr/devices/{public_id}.png`.
+
+El QR no contiene datos medicos. El QR contiene solo la URL publica `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`.
+
+Endpoints admin:
+
+- `GET /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; devuelve metadata y `exists`.
+- `POST /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; genera/sube el QR y devuelve metadata.
+
+La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
+
+Limites actuales: no hay NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos ni subida de archivos medicos. Sprint 5 no agrega nuevas tablas ni nuevas migraciones.

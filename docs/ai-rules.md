@@ -32,6 +32,10 @@ Device Foundation ya existe e incluye modelo `Device`, tabla `devices`, relacion
 
 Public Profile Foundation ya existe e incluye modelo `EmergencyProfile`, tabla `emergency_profiles`, relacion unica `emergency_profiles.device_id -> devices.id`, endpoints privados para ver/crear/editar el perfil de un device y endpoint publico de lectura por `public_id`.
 
+QR Foundation ya existe e incluye configuracion `PUBLIC_APP_URL` y `PUBLIC_PROFILE_PATH`, helper `build_public_profile_url(public_id)`, generacion de QR PNG en memoria con `qrcode[pil]`, persistencia en MinIO/S3 compatible y object key estable `qr/devices/{public_id}.png`.
+
+El QR no debe contener datos medicos. El QR debe contener solo la URL publica `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+
 Estados de device existentes:
 
 - `pending_activation`
@@ -51,8 +55,17 @@ Endpoints de perfiles de emergencia existentes:
 - `PUT /api/devices/{device_id}/emergency-profile`
 - `GET /api/public/profiles/{public_id}`
 
+Endpoints admin de QR existentes:
+
+- `GET /api/admin/devices/{device_id}/qr`
+- `POST /api/admin/devices/{device_id}/qr`
+
 El endpoint publico no requiere autenticacion, busca por `Device.public_id`, solo responde si el device esta `active`, el perfil tiene `is_public == true` y `deleted_at is null`, y no expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
 
-No implementar QR, NFC, frontend publico `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
+Los endpoints QR requieren Bearer token y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
 
-`device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
+No implementar NFC, frontend publico `/p/{public_id}`, descarga directa de QR, presigned URLs, tracking de escaneos, notificaciones, geolocalizacion, subida de archivos medicos, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
+
+No crear nuevas tablas ni migraciones salvo solicitud explicita.
+
+`device_type="qr_nfc_tag"` existe como base del modelo. QR Foundation ya existe; NFC todavia no esta implementado.
