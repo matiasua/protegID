@@ -19,6 +19,9 @@ class Settings:
     s3_access_key_id: str
     s3_secret_access_key: str
     minio_bucket: str
+    jwt_secret_key: str
+    jwt_algorithm: str
+    access_token_expire_minutes: int
 
     def __init__(self) -> None:
         self.app_env = getenv("APP_ENV", "local")
@@ -30,6 +33,11 @@ class Settings:
         self.s3_access_key_id = getenv("S3_ACCESS_KEY_ID", "")
         self.s3_secret_access_key = getenv("S3_SECRET_ACCESS_KEY", "")
         self.minio_bucket = getenv("MINIO_BUCKET", "")
+        self.jwt_secret_key = getenv("JWT_SECRET_KEY", "")
+        self.jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
+        self.access_token_expire_minutes = int(
+            getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+        )
 
     @property
     def is_local(self) -> bool:

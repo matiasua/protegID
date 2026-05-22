@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from app.api.auth import router as auth_router
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.readiness import get_readiness_status
@@ -24,6 +25,7 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
+app.include_router(auth_router)
 
 logger.info(
     "api_started",
