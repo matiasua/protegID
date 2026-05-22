@@ -5,15 +5,16 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.core.db import Base
 from app.core.settings import get_settings
+from app.models import User  # noqa: F401
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Baseline tecnica: aun no hay metadata de modelos de negocio.
-target_metadata = None
+target_metadata = Base.metadata
 
 
 def _get_database_url() -> str:

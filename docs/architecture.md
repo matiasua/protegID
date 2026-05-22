@@ -17,11 +17,26 @@ Nginx recibe trafico HTTP en `localhost:8080`.
 - `/` se enruta hacia `protegid-web:3000`.
 - `/api/*` se enruta hacia `protegid-api:8000`.
 
-PostgreSQL, Redis y MinIO quedan disponibles para futuras funcionalidades. Alembic queda configurado con un baseline tecnico vacio; este setup no crea modelos, tablas de negocio ni buckets.
+PostgreSQL, Redis y MinIO quedan disponibles para funcionalidades actuales y futuras. Alembic esta configurado y el backend ya incluye la tabla de negocio `users` para la base de autenticacion.
+
+## Auth Foundation
+
+El backend incluye la base de autenticacion de Sprint 2:
+
+- Modelo SQLAlchemy `User`.
+- Tabla `users` gestionada por Alembic.
+- Hashing de passwords con Argon2 mediante `pwdlib`.
+- JWT access token para autenticacion Bearer.
+- Endpoints actuales:
+  - `POST /api/auth/register`
+  - `POST /api/auth/login`
+  - `GET /api/auth/me`
+
+`GET /api/auth/me` requiere un token Bearer valido. No existe refresh token, recuperacion de password ni MFA en el estado actual.
 
 ## Limites de esta etapa
 
-No se implementa login, generacion de QR, activacion de dispositivos, modelos de base de datos, identificadores publicos ni logica medica.
+No se implementan devices, QR, perfil medico, contactos de emergencia, notificaciones, refresh token, recuperacion de password ni MFA.
 
 ## CodeGraph
 
