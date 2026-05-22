@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.db import Base
 from app.core.settings import get_settings
-from app.models import Device, User  # noqa: F401
+from app.models import Device, EmergencyProfile, User  # noqa: F401
 
 config = context.config
 

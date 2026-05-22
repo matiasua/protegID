@@ -7,6 +7,8 @@ from fastapi.responses import JSONResponse
 
 from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
+from app.api.emergency_profiles import router as emergency_profiles_router
+from app.api.public_profiles import router as public_profiles_router
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.readiness import get_readiness_status
@@ -28,6 +30,8 @@ app = FastAPI(
 register_exception_handlers(app)
 app.include_router(auth_router)
 app.include_router(devices_router)
+app.include_router(emergency_profiles_router)
+app.include_router(public_profiles_router)
 
 logger.info(
     "api_started",

@@ -17,7 +17,7 @@ Nginx recibe trafico HTTP en `localhost:8080`.
 - `/` se enruta hacia `protegid-web:3000`.
 - `/api/*` se enruta hacia `protegid-api:8000`.
 
-PostgreSQL, Redis y MinIO quedan disponibles para funcionalidades actuales y futuras. Alembic esta configurado y el backend ya incluye las tablas de negocio `users` y `devices`.
+PostgreSQL, Redis y MinIO quedan disponibles para funcionalidades actuales y futuras. Alembic esta configurado y el backend ya incluye las tablas de negocio `users`, `devices` y `emergency_profiles`.
 
 ## Auth Foundation
 
@@ -60,9 +60,30 @@ Endpoints actuales de devices:
 
 `GET /api/devices` requiere token Bearer y solo lista dispositivos del usuario autenticado. `POST /api/devices/activate` requiere token Bearer y activa un dispositivo `pending_activation` para el usuario autenticado. `POST /api/admin/devices` requiere token Bearer y `role=admin`.
 
+## Public Profile Foundation
+
+El backend incluye la base de perfiles publicos de emergencia de Sprint 4:
+
+- Modelo SQLAlchemy `EmergencyProfile`.
+- Tabla `emergency_profiles` gestionada por Alembic.
+- Relacion unica y obligatoria `emergency_profiles.device_id -> devices.id`.
+- Un perfil de emergencia queda asociado a un unico device.
+- Los endpoints privados requieren token Bearer y validan ownership con `current_user.id == device.user_id`.
+
+Endpoints privados de perfiles de emergencia:
+
+- `GET /api/devices/{device_id}/emergency-profile`
+- `PUT /api/devices/{device_id}/emergency-profile`
+
+Endpoint publico de perfil de emergencia:
+
+- `GET /api/public/profiles/{public_id}`
+
+El endpoint publico no requiere autenticacion. Busca por `Device.public_id` y solo responde si el device esta `active`, el perfil tiene `is_public == true` y `deleted_at is null`. La respuesta publica no expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
+
 ## Limites de esta etapa
 
-No hay generacion de QR, escritura NFC, vista publica `/p/{public_id}`, perfil medico, contactos de emergencia, notificaciones, logica de escaneo, refresh token, recuperacion de password ni MFA.
+No hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
 
 `device_type="qr_nfc_tag"` existe solo como base del modelo de dispositivo. No representa una implementacion actual de QR ni NFC.
 
