@@ -20,6 +20,13 @@ Variables JWT usadas por la API:
 - `JWT_ALGORITHM`: algoritmo de firma. Valor local por defecto: `HS256`.
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: expiracion del access token en minutos. Valor local por defecto: `30`.
 
+Variables publicas usadas para QR:
+
+- `PUBLIC_APP_URL`: origen publico de la aplicacion. Valor local por defecto: `http://localhost:8080`.
+- `PUBLIC_PROFILE_PATH`: path publico de perfil. Valor local por defecto: `/p`.
+
+Estas variables no son secretos. Se usan para construir la URL publica codificada en el QR mediante `build_public_profile_url(public_id)`.
+
 ## Autenticacion
 
 Sprint 2 implementa Auth Foundation:
@@ -82,8 +89,31 @@ Controles de seguridad y privacidad:
 - La respuesta publica no expone `created_at`, `updated_at` ni `deleted_at`.
 - Los datos medicos no deben loguearse.
 
+## QR Foundation
+
+Sprint 5 implementa la base de QR:
+
+- Dependencia `qrcode[pil]`.
+- Generacion de QR PNG en memoria.
+- Persistencia del QR en MinIO/S3 compatible.
+- Object key estable: `qr/devices/{public_id}.png`.
+- Endpoints admin `GET /api/admin/devices/{device_id}/qr` y `POST /api/admin/devices/{device_id}/qr`.
+
+Reglas de seguridad y privacidad:
+
+- El QR no contiene datos medicos.
+- El QR contiene solo la URL publica `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`.
+- Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+- Ambos endpoints QR requieren Bearer token.
+- Ambos endpoints QR requieren `role=admin`.
+- Los endpoints QR solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
+- No se devuelve el archivo PNG todavia.
+- No se entrega presigned URL todavia.
+
 ## Estado actual
 
-El estado actual no implementa generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
+El estado actual no implementa NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
 
-`device_type="qr_nfc_tag"` existe solo como base del modelo de dispositivo, no como implementacion QR/NFC.
+Sprint 5 no agrega nuevas tablas ni nuevas migraciones.
+
+`device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.

@@ -20,6 +20,8 @@ services:
       dockerfile: Dockerfile
     environment:
       APP_ENV: ${APP_ENV:-local}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
+      PUBLIC_PROFILE_PATH: ${PUBLIC_PROFILE_PATH:-/p}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT is required}

@@ -8,11 +8,14 @@ from app.schemas.emergency_profile import (
     EmergencyProfileRead,
     EmergencyProfileUpdate,
 )
+from app.schemas.qr_code import DeviceQrMetadata, DeviceQrStatus
 from app.schemas.user import UserCreate, UserRead
 
 __all__ = [
     "DeviceActivate",
     "DeviceCreate",
+    "DeviceQrMetadata",
+    "DeviceQrStatus",
     "DeviceRead",
     "EmergencyProfileCreate",
     "EmergencyProfilePublicRead",

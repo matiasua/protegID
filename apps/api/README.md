@@ -12,6 +12,8 @@ Backend FastAPI para ProtegID.
 - `GET /api/devices`
 - `POST /api/devices/activate`
 - `POST /api/admin/devices`
+- `GET /api/admin/devices/{device_id}/qr`
+- `POST /api/admin/devices/{device_id}/qr`
 - `GET /api/devices/{device_id}/emergency-profile`
 - `PUT /api/devices/{device_id}/emergency-profile`
 - `GET /api/public/profiles/{public_id}`
@@ -25,6 +27,11 @@ Variables requeridas para JWT:
 - `JWT_SECRET_KEY`
 - `JWT_ALGORITHM`
 - `ACCESS_TOKEN_EXPIRE_MINUTES`
+
+Variables usadas para construir URLs publicas de QR:
+
+- `PUBLIC_APP_URL`
+- `PUBLIC_PROFILE_PATH`
 
 `password_hash` no se expone en respuestas. Passwords y tokens no deben loguearse.
 
@@ -70,7 +77,24 @@ Reglas del endpoint publico:
 - Solo responde si `emergency_profile.deleted_at is null`.
 - No expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
 
-Limites actuales: no hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos ni subida de archivos medicos. `device_type="qr_nfc_tag"` existe solo como base del modelo, no como implementacion QR/NFC.
+## QR Foundation
+
+El backend incluye la base de QR:
+
+- Dependencia `qrcode[pil]`.
+- Helper `build_public_profile_url(public_id)`.
+- Generacion de QR PNG en memoria.
+- Persistencia del QR en MinIO/S3 compatible.
+- Object key estable: `qr/devices/{public_id}.png`.
+
+El QR no contiene datos medicos. El QR contiene solo la URL publica `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+
+Endpoints admin:
+
+- `GET /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; devuelve metadata y `exists`.
+- `POST /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; genera/sube el QR y devuelve metadata.
+
+La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
 
 ## Ejemplos curl
 
@@ -122,6 +146,20 @@ curl -X POST http://localhost:8000/api/admin/devices \
   -d '{"label":"Test device"}'
 ```
 
+Get device QR metadata as admin:
+
+```bash
+curl http://localhost:8000/api/admin/devices/<device_id>/qr \
+  -H 'Authorization: Bearer <admin_access_token>'
+```
+
+Generate device QR as admin:
+
+```bash
+curl -X POST http://localhost:8000/api/admin/devices/<device_id>/qr \
+  -H 'Authorization: Bearer <admin_access_token>'
+```
+
 Get private emergency profile:
 
 ```bash
@@ -146,4 +184,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay generacion de QR, escritura NFC, frontend `/p/{public_id}`, notificaciones, geolocalizacion, historial de escaneos ni subida de archivos medicos.
+No hay NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos ni subida de archivos medicos.
+
+Sprint 5 no agrega nuevas tablas ni nuevas migraciones.
