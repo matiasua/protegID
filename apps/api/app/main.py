@@ -9,6 +9,7 @@ from app.api.auth import router as auth_router
 from app.api.devices import router as devices_router
 from app.api.emergency_profiles import router as emergency_profiles_router
 from app.api.public_profiles import router as public_profiles_router
+from app.api.qr_codes import router as qr_codes_router
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.readiness import get_readiness_status
@@ -32,6 +33,7 @@ app.include_router(auth_router)
 app.include_router(devices_router)
 app.include_router(emergency_profiles_router)
 app.include_router(public_profiles_router)
+app.include_router(qr_codes_router)
 
 logger.info(
     "api_started",
