@@ -8,8 +8,10 @@
 - No exponer IDs internos.
 - No hardcodear secretos.
 - No loguear datos medicos o sensibles.
+- No loguear passwords ni tokens.
 - Toda futura tabla debe tener migracion.
 - Todo futuro endpoint debe usar schemas/validaciones.
+- No modificar Auth Foundation sin justificacion explicita de producto o seguridad.
 
 ## Stack definido
 
@@ -24,4 +26,6 @@
 
 ## Restricciones de esta etapa
 
-No implementar login, generacion de QR, modelos de negocio, generacion de identificadores ni logica medica hasta que exista una solicitud explicita.
+Auth Foundation ya existe e incluye modelo `User`, tabla `users`, hashing de passwords, JWT access token y endpoints `register`, `login` y `me`.
+
+No implementar devices, QR, perfil medico, contactos de emergencia, notificaciones, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
