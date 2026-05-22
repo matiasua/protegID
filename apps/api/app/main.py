@@ -3,9 +3,11 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.readiness import get_readiness_status
 from app.core.settings import get_settings
 
 configure_logging()
@@ -38,5 +40,11 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/ready", tags=["system"])
-def ready() -> dict[str, str]:
-    return {"status": "ready", "service": settings.service_name}
+def ready():
+    readiness = get_readiness_status()
+    payload = {"service": settings.service_name, **readiness}
+
+    if not readiness["ready"]:
+        return JSONResponse(status_code=503, content=payload)
+
+    return payload
