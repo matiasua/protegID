@@ -37,3 +37,13 @@ make logs
 make down
 make build
 ```
+
+## Migraciones de base de datos
+
+Alembic vive dentro de `apps/api` y lee `DATABASE_URL` desde la configuracion de la API.
+
+```bash
+docker compose exec protegid-api alembic current
+docker compose exec protegid-api alembic upgrade head
+docker compose exec protegid-api alembic history
+```
