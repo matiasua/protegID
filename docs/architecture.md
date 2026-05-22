@@ -23,6 +23,8 @@ PostgreSQL, Redis y MinIO quedan disponibles para futuras funcionalidades. Alemb
 
 No se implementa login, generacion de QR, activacion de dispositivos, modelos de base de datos, identificadores publicos ni logica medica.
 
-## Preparacion para Code Graph
+## CodeGraph
 
-La estructura del repositorio y la documentacion quedan organizadas para poder indexarse posteriormente con Code Graph. Code Graph no esta inicializado ni configurado en esta etapa.
+CodeGraph esta inicializado y operativo para este proyecto. OpenCode tiene integracion MCP con herramientas `codegraph_*`, que deben usarse para busquedas estructurales del proyecto antes de cambios relevantes.
+
+La carpeta `.codegraph/` no debe modificarse manualmente ni subirse como indice del proyecto.
