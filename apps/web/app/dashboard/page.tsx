@@ -332,6 +332,10 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-950 sm:px-6 lg:py-12">
       <section className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <Link className="mb-6 inline-flex text-sm font-medium text-sky-700 underline-offset-4 hover:underline" href="/">
+            Volver al inicio
+          </Link>
+
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Área privada</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Panel privado ProtegID</h1>
           <p className="mt-4 text-base leading-7 text-slate-600">

@@ -54,6 +54,10 @@ export default function LoginPage() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_right,_rgba(14,165,233,0.18),_transparent_30rem)] px-6 py-10">
       <section className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-5xl items-center justify-center">
         <div className="w-full max-w-xl rounded-3xl border bg-card/95 p-6 shadow-sm backdrop-blur md:p-10">
+          <Link className="mb-6 inline-flex text-sm font-medium text-sky-700 underline-offset-4 hover:underline" href="/">
+            Volver al inicio
+          </Link>
+
           <div className="mb-8">
             <p className="mb-3 text-sm font-medium uppercase tracking-[0.24em] text-sky-600">
               Auth temporal
