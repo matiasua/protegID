@@ -1,12 +1,14 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import Link from "next/link";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
+import { clearSessionToken, getSessionToken } from "@/lib/session";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
 import type { EmergencyProfile, EmergencyProfileInput } from "@/types/emergency-profile";
@@ -32,6 +34,11 @@ type ProfileFieldConfig = {
   multiline?: boolean;
 };
 
+type ValidateSessionOptions = {
+  clearStoredTokenOnFailure?: boolean;
+  updateTokenInput?: boolean;
+};
+
 const PROFILE_FIELDS: ProfileFieldConfig[] = [
   { name: "display_name", label: "Nombre visible" },
   { name: "blood_type", label: "Tipo de sangre" },
@@ -46,14 +53,14 @@ const PROFILE_FIELDS: ProfileFieldConfig[] = [
 
 function getValidationErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
-    return "Token invalido, expirado o sin permisos para acceder al panel.";
+    return "Token inválido, expirado o sin permisos para acceder al panel.";
   }
 
   if (error instanceof Error) {
     return error.message;
   }
 
-  return "No se pudo validar la sesion.";
+  return "No se pudo validar la sesión.";
 }
 
 function getDevicesErrorMessage(error: unknown): string {
@@ -158,10 +165,25 @@ export default function DashboardPage() {
   const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
   const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(null);
   const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
+  const [hasCheckedStoredSession, setHasCheckedStoredSession] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  useEffect(() => {
+    const storedToken = getSessionToken();
+
+    if (!storedToken) {
+      setHasCheckedStoredSession(true);
+      return;
+    }
+
+    void validateAccessToken(storedToken, {
+      clearStoredTokenOnFailure: true,
+      updateTokenInput: true,
+    }).finally(() => setHasCheckedStoredSession(true));
+  }, []);
 
   function resetProfileEditor() {
     setSelectedDevice(null);
@@ -173,6 +195,12 @@ export default function DashboardPage() {
     setIsSavingProfile(false);
   }
 
+  function resetAuthenticatedState() {
+    setCurrentUser(null);
+    setDevices([]);
+    resetProfileEditor();
+  }
+
   function updateProfileTextField(name: ProfileTextFieldName, value: string) {
     setProfileForm((currentForm) => ({
       ...currentForm,
@@ -180,18 +208,17 @@ export default function DashboardPage() {
     }));
   }
 
-  async function handleValidateSession(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const token = accessToken.trim();
+  async function validateAccessToken(token: string, options: ValidateSessionOptions = {}) {
     setErrorMessage(null);
     setDeviceErrorMessage(null);
-    setCurrentUser(null);
-    setDevices([]);
-    resetProfileEditor();
+    resetAuthenticatedState();
+
+    if (options.updateTokenInput) {
+      setAccessToken(token);
+    }
 
     if (!token) {
-      setErrorMessage("Pega un access token antes de validar la sesion.");
+      setErrorMessage("Pega un access token antes de validar la sesión.");
       return;
     }
 
@@ -201,6 +228,11 @@ export default function DashboardPage() {
       const user = await getCurrentUser(token);
       setCurrentUser(user);
     } catch (error) {
+      if (options.clearStoredTokenOnFailure) {
+        clearSessionToken();
+        setAccessToken("");
+      }
+
       setErrorMessage(getValidationErrorMessage(error));
       return;
     } finally {
@@ -219,6 +251,19 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleValidateSession(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await validateAccessToken(accessToken.trim());
+  }
+
+  function handleLogout() {
+    clearSessionToken();
+    setAccessToken("");
+    setErrorMessage(null);
+    setDeviceErrorMessage(null);
+    resetAuthenticatedState();
+  }
+
   async function handleEditProfile(device: Device) {
     const token = accessToken.trim();
     setSelectedDevice(device);
@@ -228,7 +273,7 @@ export default function DashboardPage() {
     setProfileSuccessMessage(null);
 
     if (!token) {
-      setProfileErrorMessage("Valida la sesion antes de editar un perfil.");
+      setProfileErrorMessage("Valida la sesión antes de editar un perfil.");
       return;
     }
 
@@ -263,7 +308,7 @@ export default function DashboardPage() {
     const token = accessToken.trim();
 
     if (!token) {
-      setProfileErrorMessage("Valida la sesion antes de guardar el perfil.");
+      setProfileErrorMessage("Valida la sesión antes de guardar el perfil.");
       return;
     }
 
@@ -287,37 +332,51 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-950 sm:px-6 lg:py-12">
       <section className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Area privada</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Área privada</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Panel privado ProtegID</h1>
           <p className="mt-4 text-base leading-7 text-slate-600">
-            Esta pantalla es una validacion temporal por token para preparar el dashboard privado. Por ahora pega manualmente un access token JWT y se validara contra la API.
+            Esta pantalla usa una sesión temporal guardada en sessionStorage durante la sesión del navegador.
+            Si no hay sesión activa, inicia sesión o usa el fallback técnico con token manual.
           </p>
 
-          <form className="mt-8 space-y-4" onSubmit={handleValidateSession}>
-            <div>
-              <label className="text-sm font-medium text-slate-700" htmlFor="access-token">
-                Access token
-              </label>
-              <textarea
-                className="mt-2 min-h-36 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                id="access-token"
-                onChange={(event) => setAccessToken(event.target.value)}
-                placeholder="Pega aqui el access token temporal"
-                value={accessToken}
-              />
-              <p className="mt-2 text-sm text-slate-500">
-                El token se conserva solo en el estado de esta pagina. No se guarda en localStorage ni cookies.
-              </p>
-            </div>
+          <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h2 className="text-base font-semibold text-slate-950">Fallback técnico</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Puedes pegar un access token manualmente mientras el flujo de sesión sigue siendo temporal.
+            </p>
 
-            <Button disabled={isValidating || isLoadingDevices} type="submit">
-              {isValidating ? "Validando..." : "Validar sesión"}
-            </Button>
-          </form>
+            <form className="mt-4 space-y-4" onSubmit={handleValidateSession}>
+              <div>
+                <label className="text-sm font-medium text-slate-700" htmlFor="access-token">
+                  Access token
+                </label>
+                <textarea
+                  className="mt-2 min-h-36 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                  id="access-token"
+                  onChange={(event) => setAccessToken(event.target.value)}
+                  placeholder="Pega aquí el access token temporal"
+                  value={accessToken}
+                />
+                <p className="mt-2 text-sm text-slate-500">
+                  El token manual se conserva solo en el estado de esta página. No se guarda en localStorage ni cookies.
+                </p>
+              </div>
+
+              <Button disabled={isValidating || isLoadingDevices} type="submit">
+                {isValidating ? "Validando..." : "Validar sesión"}
+              </Button>
+            </form>
+          </div>
         </div>
 
         <aside className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <h2 className="text-xl font-semibold tracking-tight">Estado de sesion</h2>
+          <h2 className="text-xl font-semibold tracking-tight">Estado de sesión</h2>
+
+          {!hasCheckedStoredSession ? (
+            <p className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+              Revisando sesión temporal...
+            </p>
+          ) : null}
 
           {isValidating ? (
             <p className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
@@ -352,10 +411,23 @@ export default function DashboardPage() {
             </dl>
           ) : null}
 
-          {!isValidating && !errorMessage && !currentUser ? (
-            <p className="mt-4 text-sm leading-6 text-slate-600">
-              Aun no hay una sesion validada. Pega un token y presiona "Validar sesión".
-            </p>
+          {currentUser ? (
+            <Button className="mt-5 w-full" onClick={handleLogout} type="button" variant="outline">
+              Cerrar sesión
+            </Button>
+          ) : null}
+
+          {hasCheckedStoredSession && !isValidating && !currentUser ? (
+            <div className="mt-4 space-y-4">
+              {!errorMessage ? (
+                <p className="text-sm leading-6 text-slate-600">
+                  Aún no hay una sesión temporal activa. Inicia sesión para guardar el token en sessionStorage o usa el fallback manual.
+                </p>
+              ) : null}
+              <Button asChild className="w-full">
+                <Link href="/login">Ir a login</Link>
+              </Button>
+            </div>
           ) : null}
         </aside>
 
