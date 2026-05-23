@@ -96,6 +96,19 @@ Endpoints admin:
 
 La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
 
+## Integracion con frontend publico
+
+El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+
+- La pagina no requiere login.
+- Renderiza server-side.
+- Consulta `GET /api/public/profiles/{public_id}`.
+- Si el perfil existe y esta disponible, responde `200 OK`.
+- Si no existe o no esta disponible, responde `404` real usando `notFound()`.
+- No expone IDs internos, `device_id`, timestamps ni `deleted_at`.
+- Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
+- El 404 no revela si el `public_id` existe o no.
+
 ## Ejemplos curl
 
 Register:
@@ -184,6 +197,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos ni subida de archivos medicos.
+No hay NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica ni subida de archivos medicos.
 
-Sprint 5 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 6 no agrega nuevas tablas ni nuevas migraciones.

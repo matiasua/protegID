@@ -23,6 +23,7 @@ make up
 Servicios principales:
 
 - Web via Nginx: `http://localhost:8080`
+- Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck: `http://localhost:8080/api/health`
 - API readiness: `http://localhost:8080/api/ready`
 - Auth register: `http://localhost:8080/api/auth/register`
@@ -57,6 +58,18 @@ La API usa estas variables para construir la URL publica que se codifica dentro 
 - `PUBLIC_PROFILE_PATH`: path publico de perfil. Valor local: `/p`.
 
 El helper `build_public_profile_url(public_id)` construye URLs con formato `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+
+## Build frontend con Docker
+
+El contenedor de desarrollo de Next usa `.next-dev`. El build usa `.next`.
+
+Para validar el build del frontend sin reutilizar los artefactos del contenedor de desarrollo:
+
+```bash
+docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"
+```
+
+Evitar ejecutar `npm run build` dentro del contenedor dev vivo si puede mezclar artefactos `.next`.
 
 ## Comandos utiles
 
@@ -146,6 +159,22 @@ Reglas del endpoint publico:
 - Solo responde si `emergency_profile.deleted_at is null`.
 - No expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
 
+## Public Profile Frontend
+
+La ruta publica frontend `/p/{public_id}` muestra la ficha de emergencia asociada al `public_id`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+
+- No requiere login.
+- Renderiza server-side.
+- Consulta `GET /api/public/profiles/{public_id}`.
+- Si el perfil existe y esta disponible, responde `200 OK`.
+- Si no existe o no esta disponible, responde `404` real usando `notFound()`.
+- No expone IDs internos, `device_id`, timestamps ni `deleted_at`.
+- Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
+- El 404 no revela si el `public_id` existe o no.
+- La vista es mobile-first y usa formato de ficha de emergencia.
+- Tipo de sangre, contacto y telefono de emergencia aparecen destacados.
+- Los campos vacios se muestran como `No informado`.
+
 ## QR Foundation
 
 La API incluye la base de QR:
@@ -164,4 +193,4 @@ Endpoints admin:
 
 La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
 
-Limites actuales: no hay NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos ni subida de archivos medicos. Sprint 5 no agrega nuevas tablas ni nuevas migraciones.
+Limites actuales: no hay NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica ni subida de archivos medicos. Sprint 6 no agrega nuevas tablas ni nuevas migraciones.

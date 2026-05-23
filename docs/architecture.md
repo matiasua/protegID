@@ -100,11 +100,28 @@ Endpoints admin de QR:
 
 Ambos endpoints requieren token Bearer y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
 
+## Public Profile Frontend
+
+El frontend publico de Sprint 6 ya existe en Next.js App Router.
+
+- Ruta publica: `/p/{public_id}`.
+- Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+- No requiere login.
+- Renderiza server-side la ficha de emergencia.
+- Consulta el backend mediante `GET /api/public/profiles/{public_id}`.
+- Si el perfil existe y esta disponible, responde `200 OK`.
+- Si el perfil no existe o no esta disponible, responde `404` real usando `notFound()`.
+- Tiene estado visual especifico para perfil no disponible.
+
+La vista publica no expone IDs internos, `device_id`, timestamps ni `deleted_at`. Solo muestra los campos incluidos en `EmergencyProfilePublicRead`. El 404 no debe revelar si el `public_id` existe o no.
+
+La UI es una ficha de emergencia mobile-first. Prioriza datos criticos arriba, destaca tipo de sangre, contacto y telefono de emergencia, organiza la informacion en secciones y muestra campos vacios como `No informado`.
+
 ## Limites de esta etapa
 
-No hay NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
+No hay NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
 
-Sprint 5 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 6 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
 
