@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+apps/web/node_modules/
 .venv/
 venv/
 __pycache__/
@@ -7,6 +8,8 @@ __pycache__/
 
 # Build outputs
 .next/
+apps/web/.next/
+apps/web/.next-dev/
 out/
 dist/
 build/

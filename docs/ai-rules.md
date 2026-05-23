@@ -36,6 +36,16 @@ QR Foundation ya existe e incluye configuracion `PUBLIC_APP_URL` y `PUBLIC_PROFI
 
 El QR no debe contener datos medicos. El QR debe contener solo la URL publica `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
 
+Public Profile Frontend ya existe en `/p/{public_id}`. La pagina no requiere login, consulta server-side `GET /api/public/profiles/{public_id}`, responde `200 OK` si el perfil esta disponible y responde `404` real con `notFound()` si no lo esta. No expone IDs internos, `device_id`, timestamps ni `deleted_at`; solo muestra datos de `EmergencyProfilePublicRead`. El 404 no debe revelar si el `public_id` existe o no.
+
+La vista publica debe mantenerse como ficha de emergencia mobile-first: tipo de sangre destacado, contacto y telefono de emergencia destacados, secciones claras y campos vacios como `No informado`.
+
+Next dev usa `.next-dev`; `next build` usa `.next`. Para validar build frontend sin ensuciar el contenedor dev, usar:
+
+```bash
+docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"
+```
+
 Estados de device existentes:
 
 - `pending_activation`
@@ -64,7 +74,7 @@ El endpoint publico no requiere autenticacion, busca por `Device.public_id`, sol
 
 Los endpoints QR requieren Bearer token y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
 
-No implementar NFC, frontend publico `/p/{public_id}`, descarga directa de QR, presigned URLs, tracking de escaneos, notificaciones, geolocalizacion, subida de archivos medicos, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
+No implementar NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica, subida de archivos medicos, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
 
 No crear nuevas tablas ni migraciones salvo solicitud explicita.
 

@@ -1,6 +1,7 @@
-node_modules
-.next
-out
+node_modules/
+.next/
+.next-dev/
+out/
 npm-debug.log*
 .env
 .env.*

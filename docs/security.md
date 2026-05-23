@@ -110,10 +110,28 @@ Reglas de seguridad y privacidad:
 - No se devuelve el archivo PNG todavia.
 - No se entrega presigned URL todavia.
 
+## Public Profile Frontend
+
+Sprint 6 implementa la ruta publica frontend `/p/{public_id}`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+
+Reglas de seguridad y privacidad:
+
+- La pagina publica no requiere login.
+- La pagina consulta server-side `GET /api/public/profiles/{public_id}`.
+- Si el perfil existe y esta disponible, responde `200 OK`.
+- Si no existe o no esta disponible, responde `404` real usando `notFound()`.
+- No expone IDs internos.
+- No expone `device_id`.
+- No expone timestamps.
+- No expone `deleted_at`.
+- Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
+- El 404 no debe revelar si el `public_id` existe o no.
+- Los datos medicos no deben loguearse.
+
 ## Estado actual
 
-El estado actual no implementa NFC, frontend `/p/{public_id}`, descarga directa del QR, presigned URLs, notificaciones, geolocalizacion, tracking de escaneos, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
+El estado actual no implementa NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
 
-Sprint 5 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 6 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
