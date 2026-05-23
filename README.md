@@ -59,6 +59,12 @@ make ps       # Lista servicios
 make build    # Construye imagenes
 ```
 
+Para validar el build del frontend sin reutilizar los artefactos `.next` del contenedor de desarrollo:
+
+```bash
+docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"
+```
+
 ## Estado actual
 
 Este setup inicial no implementa login, generacion de QR, modelos de base de datos, identificadores publicos, logica medica ni funcionalidades de negocio.
