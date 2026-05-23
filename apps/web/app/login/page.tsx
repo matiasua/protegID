@@ -6,6 +6,7 @@ import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
 import { login } from "@/lib/auth";
+import { setSessionToken } from "@/lib/session";
 import type { LoginResponse } from "@/types/auth";
 
 function getLoginErrorMessage(error: unknown): string {
@@ -40,6 +41,7 @@ export default function LoginPage() {
 
     try {
       const response = await login(trimmedEmail, password);
+      setSessionToken(response.access_token);
       setLoginResponse(response);
     } catch (error) {
       setErrorMessage(getLoginErrorMessage(error));
@@ -130,7 +132,7 @@ export default function LoginPage() {
                 value={loginResponse.access_token}
               />
               <p className="mt-2 text-emerald-800">
-                Copia este token y pégalo manualmente en /dashboard. No se guarda en el navegador.
+                Copia este token y pégalo manualmente en /dashboard. También se guarda solo en sessionStorage durante la sesión del navegador.
               </p>
             </section>
           ) : null}
