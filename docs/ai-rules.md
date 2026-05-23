@@ -40,15 +40,19 @@ Public Profile Frontend ya existe en `/p/{public_id}`. La pagina no requiere log
 
 La vista publica debe mantenerse como ficha de emergencia mobile-first: tipo de sangre destacado, contacto y telefono de emergencia destacados, secciones claras y campos vacios como `No informado`.
 
-Auth Frontend Foundation inicial ya existe. `/login` permite ingresar email y password, consume `POST /api/auth/login`, recibe `access_token` y `token_type`, guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token` y muestra el token en `textarea` readonly por transparencia temporal del MVP. `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas.
+Sprint 9 agrega UX Hardening & Navigation. `/` funciona como landing inicial del MVP, incluye accesos a `/login` y `/dashboard`, explica el flujo activar identificador, completar perfil de emergencia y compartir acceso publico mediante QR/NFC, muestra el estado actual del MVP e incluye la nota `Este MVP aún no reemplaza credenciales oficiales ni atención médica profesional.`.
 
-Private Profile Management Frontend inicial ya existe en `/dashboard`. Lee automaticamente el token desde `sessionStorage` con `getSessionToken()`, valida contra `GET /api/auth/me`, carga dispositivos con `GET /api/devices`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`. Si no hay sesion muestra estado no autenticado y boton/link `Ir a login`. Mantiene fallback tecnico para pegar token manualmente y tiene boton `Cerrar sesion` con `clearSessionToken()`.
+Auth Frontend Foundation ya existe. `/login` permite ingresar email y password, consume `POST /api/auth/login`, recibe `access_token` y `token_type`, guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token` y muestra el token en `textarea` readonly por transparencia temporal del MVP. `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas. `/login` tiene `Volver al inicio`, detecta sesion temporal existente, muestra `Ya existe una sesión temporal activa.`, permite ir al dashboard, permite cerrar sesion temporal y despues de login exitoso muestra `Continuar al dashboard` sin redireccion automatica.
+
+Private Profile Management Frontend ya existe en `/dashboard`. Lee automaticamente el token desde `sessionStorage` con `getSessionToken()`, valida contra `GET /api/auth/me`, carga dispositivos con `GET /api/devices`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`. Si no hay sesion muestra estado no autenticado y boton/link `Ir a login`. Mantiene fallback tecnico reducido como `Usar token manual` y tiene boton `Cerrar sesion` con `clearSessionToken()`. `/dashboard` tiene `Volver al inicio`.
 
 La sesion frontend actual es temporal para MVP. Usa `sessionStorage`, no `localStorage`, no cookies, no refresh token, no middleware de proteccion y no expiracion/renovacion automatica desde frontend. El backend sigue validando Bearer token en endpoints privados. El token vive solo durante la sesion/pestana del navegador y `sessionStorage` no se comparte entre pestanas. Para produccion se evaluara una estrategia mas robusta.
 
 Campos del perfil privado actual: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`. `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-La UX actual incluye `/login` con estados de carga, exito y error, y `/dashboard` con validacion automatica de sesion temporal, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil`, `Cerrar sesion` y estados de carga, error y exito.
+La UX actual incluye `/login` con estados de carga, exito y error, deteccion de sesion temporal existente, cierre de sesion temporal y continuidad manual al dashboard. `/dashboard` esta organizado en estado de sesion, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, status visual y seleccion. El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
+
+La navegacion actual incluye `Volver al inicio` en `/login` y `/dashboard`, enlace discreto `ProtegID` hacia `/` en `/p/{public_id}` y not-found publico con `404` real, vuelta al inicio y sin revelar si el `public_id` existe.
 
 Next dev usa `.next-dev`; `next build` usa `.next`. Para validar build frontend sin ensuciar el contenedor dev, usar:
 
@@ -58,8 +62,11 @@ docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run b
 
 Validacion esperada de auth frontend:
 
+- `GET /` responde `200 OK`.
 - `GET /dashboard` responde `200 OK`.
 - `GET /login` responde `200 OK`.
+- `GET /p/PID-G2NYZP87KA` responde `200 OK`.
+- `GET /p/PID-AAAAAAAAAA` responde `404 Not Found`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
 
 Estados de device existentes:
@@ -90,7 +97,7 @@ El endpoint publico no requiere autenticacion, busca por `Device.public_id`, sol
 
 Los endpoints QR requieren Bearer token y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
 
-No implementar registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
+No implementar registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
 
 No crear nuevas tablas ni migraciones salvo solicitud explicita.
 

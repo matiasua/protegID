@@ -22,7 +22,7 @@ make up
 
 Servicios principales:
 
-- Web via Nginx: `http://localhost:8080`
+- Home / landing MVP via Nginx: `http://localhost:8080`
 - Login frontend temporal: `http://localhost:8080/login`
 - Dashboard privado temporal: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
@@ -176,6 +176,19 @@ La ruta publica frontend `/p/{public_id}` muestra la ficha de emergencia asociad
 - La vista es mobile-first y usa formato de ficha de emergencia.
 - Tipo de sangre, contacto y telefono de emergencia aparecen destacados.
 - Los campos vacios se muestran como `No informado`.
+- `/p/{public_id}` incluye enlace discreto `ProtegID` hacia `/`.
+- El not-found publico mantiene `404` real y permite volver al inicio sin revelar si el `public_id` existe.
+
+## Home y Navegacion Frontend
+
+La ruta `/` funciona como landing inicial del MVP.
+
+- Incluye accesos a `/login` y `/dashboard`.
+- Explica el flujo: activar identificador, completar perfil de emergencia y compartir acceso publico mediante QR/NFC.
+- Muestra el estado actual del MVP: login temporal, dashboard privado, perfil publico por `public_id` y QR generado hacia `/p/{public_id}`.
+- Incluye nota: `Este MVP aún no reemplaza credenciales oficiales ni atención médica profesional.`
+- `/login` y `/dashboard` tienen enlace `Volver al inicio`.
+- `/p/{public_id}` tiene enlace discreto a inicio mediante `ProtegID`.
 
 ## Private Profile Management Frontend
 
@@ -188,12 +201,14 @@ Estado actual:
 - Si el login es correcto, recibe `access_token` y `token_type`.
 - `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
 - `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
+- `/login` detecta sesion temporal existente desde `sessionStorage`, muestra `Ya existe una sesión temporal activa.`, permite ir a `/dashboard` y permite cerrar la sesion temporal.
+- Despues de login exitoso muestra `Continuar al dashboard` sin redireccion automatica.
 - `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas.
 - `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
 - Si no hay sesion, muestra estado no autenticado y boton/link `Ir a login`.
-- Mantiene fallback tecnico para pegar token manualmente.
+- Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
 - Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
 - Permite seleccionar un dispositivo.
 - Carga el perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
@@ -228,7 +243,7 @@ Seguridad de esta version:
 - `sessionStorage` no se comparte entre pestanas.
 - Para produccion se evaluara una estrategia mas robusta.
 
-UX actual: `/login` con estados de carga, exito y error; `/dashboard` con validacion automatica de sesion temporal, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil`, `Cerrar sesion` y estados de carga, error y exito.
+UX actual: `/login` con estados de carga, exito y error, deteccion de sesion temporal existente, cierre de sesion temporal y continuidad manual al dashboard. `/dashboard` esta organizado en estado de sesion, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, status visual y seleccion. El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
 
 Validacion esperada:
 
@@ -238,6 +253,9 @@ docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run b
 
 - `GET /login` debe responder `200 OK`.
 - `GET /dashboard` debe responder `200 OK`.
+- `GET /` debe responder `200 OK`.
+- `GET /p/PID-G2NYZP87KA` debe responder `200 OK`.
+- `GET /p/PID-AAAAAAAAAA` debe responder `404 Not Found`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
 
 ## QR Foundation
@@ -258,4 +276,4 @@ Endpoints admin:
 
 La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 8 no agrega nuevas tablas ni nuevas migraciones.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 9 no agrega nuevas tablas ni nuevas migraciones.
