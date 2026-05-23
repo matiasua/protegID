@@ -45,6 +45,7 @@ make up
 La aplicacion queda disponible en:
 
 - Web via Nginx: `http://localhost:8080`
+- Login frontend temporal: `http://localhost:8080/login`
 - Dashboard privado temporal: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck via Nginx: `http://localhost:8080/api/health`
@@ -83,32 +84,46 @@ La ruta publica frontend `/p/{public_id}` ya existe. Ejemplo local: `http://loca
 - La vista es mobile-first, destaca tipo de sangre, contacto y telefono de emergencia.
 - Los campos vacios se muestran como `No informado`.
 
-## Dashboard Privado Inicial
+## Auth Frontend Foundation
 
-La primera version del frontend privado de gestion de perfiles de emergencia existe en `/dashboard`.
+La primera version del login frontend y sesion temporal existe.
 
-- Es una pantalla temporal de validacion manual por access token.
-- Permite pegar manualmente un JWT y validarlo contra `GET /api/auth/me`.
+- Ruta frontend de login: `/login`.
+- Ruta privada: `/dashboard`.
+- `/login` permite ingresar email y password.
+- `/login` consume `POST /api/auth/login`.
+- Si el login es correcto, recibe `access_token` y `token_type`.
+- Guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
+- Muestra el token en un `textarea` readonly por transparencia temporal del MVP.
+- `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas.
+- `/dashboard` lee automaticamente el token con `getSessionToken()`.
+- `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
 - Permite seleccionar un dispositivo y cargar su perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
-- El token se guarda solo en state React; no se guarda en `localStorage` ni cookies.
-- No hay login frontend completo, refresh token ni sesion persistente.
+- Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
+- Mantiene fallback tecnico para pegar token manualmente.
+- Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
+- La sesion es temporal para MVP: usa `sessionStorage`, no `localStorage`, no cookies y no refresh token.
+- No hay middleware de proteccion ni expiracion/renovacion automatica desde frontend.
+- El backend sigue validando Bearer token en endpoints privados.
+- El token vive solo durante la sesion/pestana del navegador y `sessionStorage` no se comparte entre pestanas.
 
 Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
 
 `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-UX actual de `/dashboard`: `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+UX actual de `/dashboard`: validacion automatica si existe token temporal, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil`, `Cerrar sesion` y estados de carga, error y exito.
 
 Validacion esperada:
 
 - `docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"`
+- `GET /login` responde `200 OK`.
 - `GET /dashboard` responde `200 OK`.
-- Validacion funcional manual con JWT vigente.
+- Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend y Private Profile Management Frontend inicial.
+Existen Auth Foundation, Auth Frontend Foundation inicial, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend y Private Profile Management Frontend inicial.
 
-Limites actuales: no hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones. Para produccion se evaluara una estrategia de sesion mas robusta.

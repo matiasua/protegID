@@ -111,16 +111,24 @@ El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost
 
 ## Integracion con frontend privado
 
-El frontend privado inicial existe en `/dashboard`.
+El frontend privado inicial existe en `/login` y `/dashboard`.
 
-- Es una pantalla temporal de validacion manual por access token.
-- Valida sesion contra `GET /api/auth/me`.
+- `/login` permite ingresar email y password.
+- `/login` consume `POST /api/auth/login`.
+- Si el login es correcto, recibe `access_token` y `token_type`.
+- `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
+- `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
+- `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
+- `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Carga dispositivos con `GET /api/devices`.
 - Permite seleccionar un dispositivo.
 - Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
 - `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
-- El token se guarda solo en state React; no hay `localStorage`, cookies, refresh token ni sesion persistente.
+- Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
+- Mantiene fallback tecnico para pegar token manualmente.
+- Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
+- La sesion es temporal para MVP: usa `sessionStorage`, no `localStorage`, no cookies, no refresh token y no middleware de proteccion.
 
 ## Ejemplos curl
 
@@ -210,6 +218,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
 
-Sprint 7 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 8 no agrega nuevas tablas ni nuevas migraciones.

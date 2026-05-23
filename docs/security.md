@@ -130,18 +130,29 @@ Reglas de seguridad y privacidad:
 
 ## Private Profile Management Frontend
 
-Sprint 7 implementa una primera version de `/dashboard` para gestion privada de perfiles de emergencia.
+Sprint 8 agrega Auth Frontend Foundation inicial con `/login` y sesion temporal para `/dashboard`.
 
 Estado de seguridad actual:
 
-- `/dashboard` aun no implementa login real.
-- El access token se pega manualmente.
-- El token se guarda solo en state React.
-- El token no se guarda en `localStorage`.
-- El token no se guarda en cookies.
-- No se implemento refresh token.
-- No se implemento control de sesion persistente.
+- `/login` permite ingresar email y password.
+- `/login` consume `POST /api/auth/login`.
+- Si el login es correcto, recibe `access_token` y `token_type`.
+- `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
+- `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
+- `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
+- `/dashboard` valida sesion contra `GET /api/auth/me`.
+- `/dashboard` mantiene fallback tecnico para pegar token manualmente.
+- `/dashboard` tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
+- Es una sesion temporal para MVP.
+- Se usa `sessionStorage`, no `localStorage`.
+- No se usan cookies.
+- No hay refresh token.
+- No hay middleware de proteccion.
+- No hay expiracion/renovacion automatica desde frontend.
 - Los endpoints privados siguen protegidos por Bearer token.
+- El token vive solo durante la sesion/pestana del navegador.
+- `sessionStorage` no se comparte entre pestanas.
+- Para produccion se evaluara una estrategia mas robusta.
 - El frontend consume datos del usuario autenticado segun las validaciones del backend.
 - Tokens y datos medicos no deben loguearse.
 
@@ -151,6 +162,8 @@ Flujo actual:
 - Carga dispositivos con `GET /api/devices`.
 - Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
+- Si el token expiro o es invalido, muestra error controlado y permite volver a login.
 
 Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
 
@@ -158,8 +171,8 @@ Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditio
 
 ## Estado actual
 
-El estado actual no implementa login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 7 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 8 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
