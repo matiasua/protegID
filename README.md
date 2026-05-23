@@ -45,6 +45,7 @@ make up
 La aplicacion queda disponible en:
 
 - Web via Nginx: `http://localhost:8080`
+- Dashboard privado temporal: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck via Nginx: `http://localhost:8080/api/health`
 - API readiness via Nginx: `http://localhost:8080/api/ready`
@@ -82,8 +83,32 @@ La ruta publica frontend `/p/{public_id}` ya existe. Ejemplo local: `http://loca
 - La vista es mobile-first, destaca tipo de sangre, contacto y telefono de emergencia.
 - Los campos vacios se muestran como `No informado`.
 
+## Dashboard Privado Inicial
+
+La primera version del frontend privado de gestion de perfiles de emergencia existe en `/dashboard`.
+
+- Es una pantalla temporal de validacion manual por access token.
+- Permite pegar manualmente un JWT y validarlo contra `GET /api/auth/me`.
+- Si la sesion es valida, carga dispositivos con `GET /api/devices`.
+- Permite seleccionar un dispositivo y cargar su perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
+- Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- El token se guarda solo en state React; no se guarda en `localStorage` ni cookies.
+- No hay login frontend completo, refresh token ni sesion persistente.
+
+Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
+
+`is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+
+UX actual de `/dashboard`: `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+
+Validacion esperada:
+
+- `docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"`
+- `GET /dashboard` responde `200 OK`.
+- Validacion funcional manual con JWT vigente.
+
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation y Public Profile Frontend.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend y Private Profile Management Frontend inicial.
 
-Limites actuales: no hay tracking de escaneos, geolocalizacion, notificaciones, NFC funcional, edicion frontend del perfil, descarga publica de QR ni presigned URL publica.
+Limites actuales: no hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones.
