@@ -119,13 +119,22 @@ La UI es una ficha de emergencia mobile-first. Prioriza datos criticos arriba, d
 
 ## Private Profile Management Frontend
 
-El frontend privado inicial de Sprint 7 existe en Next.js App Router.
+El frontend privado inicial existe en Next.js App Router.
 
+- Ruta frontend de login: `/login`.
 - Ruta privada base: `/dashboard`.
-- Es una pantalla temporal de validacion manual por access token.
-- Permite pegar manualmente un JWT.
-- Valida sesion contra `GET /api/auth/me`.
-- Despues de validar, carga dispositivos con `GET /api/devices`.
+- `/login` permite ingresar email y password.
+- `/login` consume `POST /api/auth/login`.
+- Si el login es correcto, recibe `access_token` y `token_type`.
+- Guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
+- Muestra el token en un `textarea` readonly por transparencia temporal del MVP.
+- `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas.
+- `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
+- `/dashboard` valida sesion contra `GET /api/auth/me`.
+- Si la sesion es valida, carga dispositivos con `GET /api/devices`.
+- Si no hay sesion, muestra estado no autenticado y boton/link `Ir a login`.
+- Mantiene fallback tecnico para pegar token manualmente.
+- Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
 - Permite seleccionar un dispositivo.
 - Carga el perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Crea o actualiza el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
@@ -145,15 +154,30 @@ Campos gestionados por el formulario privado:
 
 `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-La UX actual incluye `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+La UX actual incluye `/login` con estados de carga, exito y error, y `/dashboard` con validacion automatica de sesion temporal, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil`, `Cerrar sesion` y estados de carga, error y exito.
+
+Seguridad de esta version:
+
+- Es una sesion temporal para MVP.
+- Usa `sessionStorage`; no usa `localStorage`.
+- No usa cookies.
+- No hay refresh token.
+- No hay middleware de proteccion.
+- No hay expiracion/renovacion automatica desde frontend.
+- El backend sigue validando Bearer token en endpoints privados.
+- El token vive solo durante la sesion/pestana del navegador.
+- `sessionStorage` no se comparte entre pestanas.
+- Para produccion se evaluara una estrategia mas robusta.
 
 Restricciones de esta version:
 
-- No hay login frontend completo.
 - No hay registro frontend completo.
 - No hay recuperacion de password.
 - No hay refresh token.
-- No hay control de sesion persistente.
+- No hay cookies HttpOnly.
+- No hay middleware de proteccion.
+- No hay roles avanzados en frontend.
+- No hay expiracion visual previa del token.
 - No hay subida de archivos medicos.
 - No hay gestion de QR desde frontend.
 - No hay NFC funcional.
@@ -165,9 +189,9 @@ Los endpoints privados siguen protegidos por Bearer token. El frontend solo cons
 
 ## Limites de esta etapa
 
-No hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 7 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 8 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
 

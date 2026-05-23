@@ -23,6 +23,7 @@ make up
 Servicios principales:
 
 - Web via Nginx: `http://localhost:8080`
+- Login frontend temporal: `http://localhost:8080/login`
 - Dashboard privado temporal: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck: `http://localhost:8080/api/health`
@@ -178,14 +179,22 @@ La ruta publica frontend `/p/{public_id}` muestra la ficha de emergencia asociad
 
 ## Private Profile Management Frontend
 
-La ruta `/dashboard` contiene la primera version del dashboard privado para gestion de perfiles de emergencia.
+La ruta `/login` contiene la primera version del login frontend. La ruta `/dashboard` contiene el dashboard privado para gestion de perfiles de emergencia.
 
 Estado actual:
 
-- Pantalla temporal de validacion manual por access token.
-- Permite pegar un JWT manualmente.
-- Valida sesion contra `GET /api/auth/me`.
-- Luego carga dispositivos con `GET /api/devices`.
+- `/login` permite ingresar email y password.
+- `/login` consume `POST /api/auth/login`.
+- Si el login es correcto, recibe `access_token` y `token_type`.
+- `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
+- `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
+- `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas.
+- `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
+- `/dashboard` valida sesion contra `GET /api/auth/me`.
+- Si la sesion es valida, carga dispositivos con `GET /api/devices`.
+- Si no hay sesion, muestra estado no autenticado y boton/link `Ir a login`.
+- Mantiene fallback tecnico para pegar token manualmente.
+- Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
 - Permite seleccionar un dispositivo.
 - Carga el perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
@@ -207,14 +216,19 @@ Campos disponibles del perfil:
 
 Seguridad de esta version:
 
-- El token se guarda solo en state React.
+- Es una sesion temporal para MVP.
+- El token se guarda en `sessionStorage`.
 - No se guarda en `localStorage`.
 - No se guarda en cookies.
 - No se implemento refresh token.
-- No se implemento control de sesion persistente.
+- No se implemento middleware de proteccion.
+- No hay expiracion/renovacion automatica desde frontend.
 - Los endpoints privados siguen protegidos por Bearer token.
+- El token vive solo durante la sesion/pestana del navegador.
+- `sessionStorage` no se comparte entre pestanas.
+- Para produccion se evaluara una estrategia mas robusta.
 
-UX actual: `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+UX actual: `/login` con estados de carga, exito y error; `/dashboard` con validacion automatica de sesion temporal, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil`, `Cerrar sesion` y estados de carga, error y exito.
 
 Validacion esperada:
 
@@ -222,8 +236,9 @@ Validacion esperada:
 docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"
 ```
 
+- `GET /login` debe responder `200 OK`.
 - `GET /dashboard` debe responder `200 OK`.
-- La validacion funcional se realiza manualmente con un JWT vigente.
+- Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
 
 ## QR Foundation
 
@@ -243,4 +258,4 @@ Endpoints admin:
 
 La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
 
-Limites actuales: no hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 7 no agrega nuevas tablas ni nuevas migraciones.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 8 no agrega nuevas tablas ni nuevas migraciones.

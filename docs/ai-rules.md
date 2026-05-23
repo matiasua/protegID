@@ -40,13 +40,15 @@ Public Profile Frontend ya existe en `/p/{public_id}`. La pagina no requiere log
 
 La vista publica debe mantenerse como ficha de emergencia mobile-first: tipo de sangre destacado, contacto y telefono de emergencia destacados, secciones claras y campos vacios como `No informado`.
 
-Private Profile Management Frontend inicial ya existe en `/dashboard`. Es una pantalla temporal de validacion manual por access token: permite pegar un JWT, valida contra `GET /api/auth/me`, carga dispositivos con `GET /api/devices`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`.
+Auth Frontend Foundation inicial ya existe. `/login` permite ingresar email y password, consume `POST /api/auth/login`, recibe `access_token` y `token_type`, guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token` y muestra el token en `textarea` readonly por transparencia temporal del MVP. `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas.
 
-El token de `/dashboard` debe mantenerse solo en state React hasta que se solicite una solucion de login/sesion. No usar `localStorage`, cookies, refresh token ni sesion persistente sin solicitud explicita.
+Private Profile Management Frontend inicial ya existe en `/dashboard`. Lee automaticamente el token desde `sessionStorage` con `getSessionToken()`, valida contra `GET /api/auth/me`, carga dispositivos con `GET /api/devices`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`. Si no hay sesion muestra estado no autenticado y boton/link `Ir a login`. Mantiene fallback tecnico para pegar token manualmente y tiene boton `Cerrar sesion` con `clearSessionToken()`.
+
+La sesion frontend actual es temporal para MVP. Usa `sessionStorage`, no `localStorage`, no cookies, no refresh token, no middleware de proteccion y no expiracion/renovacion automatica desde frontend. El backend sigue validando Bearer token en endpoints privados. El token vive solo durante la sesion/pestana del navegador y `sessionStorage` no se comparte entre pestanas. Para produccion se evaluara una estrategia mas robusta.
 
 Campos del perfil privado actual: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`. `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-La UX actual de `/dashboard` incluye `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+La UX actual incluye `/login` con estados de carga, exito y error, y `/dashboard` con validacion automatica de sesion temporal, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil`, `Cerrar sesion` y estados de carga, error y exito.
 
 Next dev usa `.next-dev`; `next build` usa `.next`. Para validar build frontend sin ensuciar el contenedor dev, usar:
 
@@ -54,10 +56,11 @@ Next dev usa `.next-dev`; `next build` usa `.next`. Para validar build frontend 
 docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"
 ```
 
-Validacion esperada de `/dashboard`:
+Validacion esperada de auth frontend:
 
 - `GET /dashboard` responde `200 OK`.
-- Validacion funcional manual con JWT vigente.
+- `GET /login` responde `200 OK`.
+- Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
 
 Estados de device existentes:
 
@@ -87,7 +90,7 @@ El endpoint publico no requiere autenticacion, busca por `Device.public_id`, sol
 
 Los endpoints QR requieren Bearer token y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
 
-No implementar login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
+No implementar registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
 
 No crear nuevas tablas ni migraciones salvo solicitud explicita.
 
