@@ -117,11 +117,57 @@ La vista publica no expone IDs internos, `device_id`, timestamps ni `deleted_at`
 
 La UI es una ficha de emergencia mobile-first. Prioriza datos criticos arriba, destaca tipo de sangre, contacto y telefono de emergencia, organiza la informacion en secciones y muestra campos vacios como `No informado`.
 
+## Private Profile Management Frontend
+
+El frontend privado inicial de Sprint 7 existe en Next.js App Router.
+
+- Ruta privada base: `/dashboard`.
+- Es una pantalla temporal de validacion manual por access token.
+- Permite pegar manualmente un JWT.
+- Valida sesion contra `GET /api/auth/me`.
+- Despues de validar, carga dispositivos con `GET /api/devices`.
+- Permite seleccionar un dispositivo.
+- Carga el perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
+- Crea o actualiza el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+
+Campos gestionados por el formulario privado:
+
+- `display_name`
+- `blood_type`
+- `allergies`
+- `medical_conditions`
+- `medications`
+- `emergency_contact_name`
+- `emergency_contact_phone`
+- `emergency_contact_relationship`
+- `notes`
+- `is_public`
+
+`is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+
+La UX actual incluye `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+
+Restricciones de esta version:
+
+- No hay login frontend completo.
+- No hay registro frontend completo.
+- No hay recuperacion de password.
+- No hay refresh token.
+- No hay control de sesion persistente.
+- No hay subida de archivos medicos.
+- No hay gestion de QR desde frontend.
+- No hay NFC funcional.
+- No hay tracking de escaneos.
+- No hay geolocalizacion.
+- No hay notificaciones.
+
+Los endpoints privados siguen protegidos por Bearer token. El frontend solo consume datos del usuario autenticado segun las validaciones de ownership del backend.
+
 ## Limites de esta etapa
 
-No hay NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
+No hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 6 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 7 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
 

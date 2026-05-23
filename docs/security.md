@@ -128,10 +128,38 @@ Reglas de seguridad y privacidad:
 - El 404 no debe revelar si el `public_id` existe o no.
 - Los datos medicos no deben loguearse.
 
+## Private Profile Management Frontend
+
+Sprint 7 implementa una primera version de `/dashboard` para gestion privada de perfiles de emergencia.
+
+Estado de seguridad actual:
+
+- `/dashboard` aun no implementa login real.
+- El access token se pega manualmente.
+- El token se guarda solo en state React.
+- El token no se guarda en `localStorage`.
+- El token no se guarda en cookies.
+- No se implemento refresh token.
+- No se implemento control de sesion persistente.
+- Los endpoints privados siguen protegidos por Bearer token.
+- El frontend consume datos del usuario autenticado segun las validaciones del backend.
+- Tokens y datos medicos no deben loguearse.
+
+Flujo actual:
+
+- Valida sesion contra `GET /api/auth/me`.
+- Carga dispositivos con `GET /api/devices`.
+- Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
+- Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+
+Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
+
+`is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+
 ## Estado actual
 
-El estado actual no implementa NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica, subida de archivos medicos, refresh token, recuperacion de password ni MFA.
+El estado actual no implementa login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 6 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 7 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.

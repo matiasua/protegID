@@ -40,11 +40,24 @@ Public Profile Frontend ya existe en `/p/{public_id}`. La pagina no requiere log
 
 La vista publica debe mantenerse como ficha de emergencia mobile-first: tipo de sangre destacado, contacto y telefono de emergencia destacados, secciones claras y campos vacios como `No informado`.
 
+Private Profile Management Frontend inicial ya existe en `/dashboard`. Es una pantalla temporal de validacion manual por access token: permite pegar un JWT, valida contra `GET /api/auth/me`, carga dispositivos con `GET /api/devices`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`.
+
+El token de `/dashboard` debe mantenerse solo en state React hasta que se solicite una solucion de login/sesion. No usar `localStorage`, cookies, refresh token ni sesion persistente sin solicitud explicita.
+
+Campos del perfil privado actual: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`. `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+
+La UX actual de `/dashboard` incluye `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+
 Next dev usa `.next-dev`; `next build` usa `.next`. Para validar build frontend sin ensuciar el contenedor dev, usar:
 
 ```bash
 docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"
 ```
+
+Validacion esperada de `/dashboard`:
+
+- `GET /dashboard` responde `200 OK`.
+- Validacion funcional manual con JWT vigente.
 
 Estados de device existentes:
 
@@ -74,7 +87,7 @@ El endpoint publico no requiere autenticacion, busca por `Device.public_id`, sol
 
 Los endpoints QR requieren Bearer token y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
 
-No implementar NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica, subida de archivos medicos, refresh token, recuperacion de password ni MFA salvo solicitud explicita.
+No implementar login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
 
 No crear nuevas tablas ni migraciones salvo solicitud explicita.
 

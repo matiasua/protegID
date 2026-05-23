@@ -109,6 +109,19 @@ El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost
 - Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
 - El 404 no revela si el `public_id` existe o no.
 
+## Integracion con frontend privado
+
+El frontend privado inicial existe en `/dashboard`.
+
+- Es una pantalla temporal de validacion manual por access token.
+- Valida sesion contra `GET /api/auth/me`.
+- Carga dispositivos con `GET /api/devices`.
+- Permite seleccionar un dispositivo.
+- Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
+- Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+- El token se guarda solo en state React; no hay `localStorage`, cookies, refresh token ni sesion persistente.
+
 ## Ejemplos curl
 
 Register:
@@ -197,6 +210,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica ni subida de archivos medicos.
+No hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
 
-Sprint 6 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 7 no agrega nuevas tablas ni nuevas migraciones.

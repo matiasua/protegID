@@ -23,6 +23,7 @@ make up
 Servicios principales:
 
 - Web via Nginx: `http://localhost:8080`
+- Dashboard privado temporal: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck: `http://localhost:8080/api/health`
 - API readiness: `http://localhost:8080/api/ready`
@@ -175,6 +176,55 @@ La ruta publica frontend `/p/{public_id}` muestra la ficha de emergencia asociad
 - Tipo de sangre, contacto y telefono de emergencia aparecen destacados.
 - Los campos vacios se muestran como `No informado`.
 
+## Private Profile Management Frontend
+
+La ruta `/dashboard` contiene la primera version del dashboard privado para gestion de perfiles de emergencia.
+
+Estado actual:
+
+- Pantalla temporal de validacion manual por access token.
+- Permite pegar un JWT manualmente.
+- Valida sesion contra `GET /api/auth/me`.
+- Luego carga dispositivos con `GET /api/devices`.
+- Permite seleccionar un dispositivo.
+- Carga el perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
+- Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+
+Campos disponibles del perfil:
+
+- `display_name`
+- `blood_type`
+- `allergies`
+- `medical_conditions`
+- `medications`
+- `emergency_contact_name`
+- `emergency_contact_phone`
+- `emergency_contact_relationship`
+- `notes`
+- `is_public`
+
+`is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+
+Seguridad de esta version:
+
+- El token se guarda solo en state React.
+- No se guarda en `localStorage`.
+- No se guarda en cookies.
+- No se implemento refresh token.
+- No se implemento control de sesion persistente.
+- Los endpoints privados siguen protegidos por Bearer token.
+
+UX actual: `Panel privado ProtegID`, `Estado de sesion`, `Mis dispositivos`, `Editar perfil`, `Guardar perfil` y estados de carga, error y exito.
+
+Validacion esperada:
+
+```bash
+docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"
+```
+
+- `GET /dashboard` debe responder `200 OK`.
+- La validacion funcional se realiza manualmente con un JWT vigente.
+
 ## QR Foundation
 
 La API incluye la base de QR:
@@ -193,4 +243,4 @@ Endpoints admin:
 
 La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
 
-Limites actuales: no hay NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, edicion frontend del perfil, descarga publica de QR, presigned URL publica ni subida de archivos medicos. Sprint 6 no agrega nuevas tablas ni nuevas migraciones.
+Limites actuales: no hay login frontend completo, registro frontend completo, recuperacion de password, refresh token, control de sesion persistente, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 7 no agrega nuevas tablas ni nuevas migraciones.
