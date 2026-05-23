@@ -5,7 +5,9 @@ import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
+import { getMyDevices } from "@/lib/devices";
 import type { AuthUser } from "@/types/auth";
+import type { Device } from "@/types/device";
 
 function getValidationErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
@@ -19,18 +21,52 @@ function getValidationErrorMessage(error: unknown): string {
   return "No se pudo validar la sesion.";
 }
 
+function getDevicesErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
+    return "No autorizado para cargar tus dispositivos.";
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "No se pudieron cargar tus dispositivos.";
+}
+
+function formatActivatedAt(value: string | null): string {
+  if (!value) {
+    return "No activado";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 export default function DashboardPage() {
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false);
 
   async function handleValidateSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const token = accessToken.trim();
     setErrorMessage(null);
+    setDeviceErrorMessage(null);
     setCurrentUser(null);
+    setDevices([]);
 
     if (!token) {
       setErrorMessage("Pega un access token antes de validar la sesion.");
@@ -44,8 +80,20 @@ export default function DashboardPage() {
       setCurrentUser(user);
     } catch (error) {
       setErrorMessage(getValidationErrorMessage(error));
+      return;
     } finally {
       setIsValidating(false);
+    }
+
+    setIsLoadingDevices(true);
+
+    try {
+      const userDevices = await getMyDevices(token);
+      setDevices(userDevices);
+    } catch (error) {
+      setDeviceErrorMessage(getDevicesErrorMessage(error));
+    } finally {
+      setIsLoadingDevices(false);
     }
   }
 
@@ -76,7 +124,7 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <Button disabled={isValidating} type="submit">
+            <Button disabled={isValidating || isLoadingDevices} type="submit">
               {isValidating ? "Validando..." : "Validar sesión"}
             </Button>
           </form>
@@ -124,6 +172,66 @@ export default function DashboardPage() {
             </p>
           ) : null}
         </aside>
+
+        {currentUser ? (
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:col-span-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">Inventario privado</p>
+                <h2 className="mt-2 text-2xl font-bold tracking-tight">Mis dispositivos</h2>
+              </div>
+            </div>
+
+            {isLoadingDevices ? (
+              <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                Cargando dispositivos...
+              </p>
+            ) : null}
+
+            {deviceErrorMessage ? (
+              <p className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+                {deviceErrorMessage}
+              </p>
+            ) : null}
+
+            {!isLoadingDevices && !deviceErrorMessage && devices.length === 0 ? (
+              <p className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                No tienes dispositivos asociados.
+              </p>
+            ) : null}
+
+            {devices.length > 0 ? (
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                {devices.map((device) => (
+                  <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4" key={device.id}>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-950">
+                          {device.label?.trim() ? device.label : "Sin etiqueta"}
+                        </h3>
+                        <p className="mt-1 break-words font-mono text-sm text-slate-500">{device.public_id}</p>
+                      </div>
+                      <span className="mt-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 sm:mt-0">
+                        {device.status}
+                      </span>
+                    </div>
+
+                    <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                      <div>
+                        <dt className="font-medium text-slate-500">Tipo</dt>
+                        <dd className="mt-1 text-slate-950">{device.device_type}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-medium text-slate-500">Activacion</dt>
+                        <dd className="mt-1 text-slate-950">{formatActivatedAt(device.activated_at)}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
       </section>
     </main>
   );
