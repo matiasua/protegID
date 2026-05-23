@@ -39,7 +39,12 @@ type ValidateSessionOptions = {
   updateTokenInput?: boolean;
 };
 
-const PROFILE_FIELD_GROUPS = [
+type ProfileFieldGroup = {
+  title: string;
+  fields: ProfileFieldConfig[];
+};
+
+const PROFILE_FIELD_GROUPS: ProfileFieldGroup[] = [
   {
     title: "Datos personales",
     fields: [{ name: "display_name", label: "Nombre visible" }],
@@ -62,7 +67,7 @@ const PROFILE_FIELD_GROUPS = [
       { name: "emergency_contact_relationship", label: "Relacion del contacto" },
     ],
   },
-] satisfies { title: string; fields: ProfileFieldConfig[] }[];
+];
 
 function getValidationErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
