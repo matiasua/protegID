@@ -198,7 +198,7 @@ docker compose exec -T protegid-api alembic upgrade head
 - `GET /api/public/devices/{public_id}/activation-status` con `lost` debe responder `404`.
 - `GET /api/public/devices/{public_id}/activation-status` con inexistente debe responder `404`.
 
-Limites actuales: el frontend todavia debe actualizarse para enviar `claim_code`, el dashboard actual puede quedar temporalmente incompatible con la nueva activacion, no existe UI first-scan en `/p/{public_id}`, no existe registro de usuario final desde primer escaneo, no existe provisionamiento masivo con export de `claim_code` y no hay auditoria formal de intentos.
+Limites actuales: no existe registro de usuario final desde primer escaneo, el boton `Crear cuenta` queda como proximamente, el usuario debe iniciar sesion antes de reclamar, la sesion sigue siendo temporal por `sessionStorage`, no existe scanner QR, no existe lectura NFC real desde navegador, no existe provisionamiento masivo con export de `claim_code` y no hay auditoria formal de intentos.
 
 ## Public Profile Foundation
 
@@ -227,13 +227,15 @@ Reglas del endpoint publico:
 
 ## Public Profile Frontend
 
-La ruta publica frontend `/p/{public_id}` muestra la ficha de emergencia asociada al `public_id`. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
+La ruta publica frontend `/p/{public_id}` muestra la ficha de emergencia asociada al `public_id` o el onboarding de primer escaneo cuando el identificador esta pendiente. Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
 
 - No requiere login.
 - Renderiza server-side.
 - Consulta `GET /api/public/profiles/{public_id}`.
 - Si el perfil existe y esta disponible, responde `200 OK`.
-- Si no existe o no esta disponible, responde `404` real usando `notFound()`.
+- Si no existe perfil publico, consulta `GET /api/public/devices/{public_id}/activation-status` mediante `getPublicDeviceActivationStatus(publicId)`.
+- Si `activation-status` responde `pending_activation`, muestra onboarding `Identificador ProtegID no activado`.
+- Si `activation-status` responde `404`, mantiene `404` real o mensaje generico usando `notFound()`.
 - No expone IDs internos, `device_id`, timestamps ni `deleted_at`.
 - Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
 - El 404 no revela si el `public_id` existe o no.
@@ -242,6 +244,22 @@ La ruta publica frontend `/p/{public_id}` muestra la ficha de emergencia asociad
 - Los campos vacios se muestran como `No informado`.
 - `/p/{public_id}` incluye enlace discreto `ProtegID` hacia `/`.
 - El not-found publico mantiene `404` real y permite volver al inicio sin revelar si el `public_id` existe.
+
+## First Scan Onboarding Frontend
+
+Flujo local esperado:
+
+- QR/NFC apuntan a `/p/{public_id}`.
+- Si existe perfil publico, se muestra la ficha publica.
+- Si no existe perfil publico y `activation-status` responde `pending_activation`, se muestra onboarding publico.
+- `apps/web/lib/public-devices.ts` expone `getPublicDeviceActivationStatus(publicId)`.
+- El cliente publico retorna estado en `200`, retorna `null` en `404`, no usa token, no envia `Authorization` y no maneja `claim_code`.
+- El onboarding indica que el identificador fisico aun no esta vinculado, que el `claim_code` viene dentro del empaque fisico y que el QR/NFC solo contiene la URL publica permanente.
+- Muestra `public_id` como referencia tecnica discreta.
+- Sin sesion temporal, `apps/web/app/p/[publicId]/activation-form.tsx` muestra CTA `Iniciar sesión`.
+- Con sesion temporal, permite ingresar `claim_code` y llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)`.
+- La activacion envia `POST /api/devices/activate` con body `{ "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }`.
+- En exito muestra `Identificador activado correctamente.` y CTA `Ir al dashboard`.
 
 ## Home y Navegacion Frontend
 
@@ -271,7 +289,7 @@ Estado actual:
 - `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
-- Permite activar/asociar un identificador fisico desde `Activar identificador` con `POST /api/devices/activate`.
+- Permite activar/asociar un identificador fisico desde `Activar identificador` con `public_id`, `claim_code` y `POST /api/devices/activate`.
 - Si no hay sesion, muestra estado no autenticado y boton/link `Ir a login`.
 - Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
 - Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
@@ -316,6 +334,7 @@ Sprint 12 agrega activacion de identificadores desde `/dashboard`; Sprint 14 cam
 
 - Se usa el formulario `Activar identificador`.
 - El input recibe `public_id` con placeholder `PID-XXXXXXXXXX`.
+- El formulario tambien recibe `claim_code` con placeholder `XXXX-XXXX-XXXX`.
 - El `public_id` puede estar impreso o asociado al QR/NFC fisico.
 - El `public_id` no contiene datos medicos.
 - La UI recomienda verificar fisicamente el identificador antes de activarlo.
@@ -323,9 +342,9 @@ Sprint 12 agrega activacion de identificadores desde `/dashboard`; Sprint 14 cam
 - Si activa correctamente muestra `Identificador activado correctamente.`.
 - La lista `Mis dispositivos` se refresca o actualiza despues de activar.
 - El dashboard mantiene perfil, QR, generacion, descarga y edicion.
-- El cliente frontend actual es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts` y todavia debe actualizarse para enviar `claim_code`.
-- El cliente usa `buildApiUrl` y maneja errores controlados `400`, `401` y `404`.
-- El dashboard actual puede quedar temporalmente incompatible hasta el sprint frontend.
+- El cliente frontend es `activateDeviceWithClaimCode(publicId, claimCode, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`.
+- El cliente usa `buildApiUrl` y maneja errores controlados `400`, `401`, `404`, `422` y `429`.
+- El dashboard limpia `claim_code` del estado despues del envio y no lo guarda en `sessionStorage` ni `localStorage`.
 
 Endpoint usado por la UI:
 
@@ -340,7 +359,7 @@ Validacion esperada de activacion:
 
 - `GET /dashboard` debe responder `200 OK`.
 - Prueba HTTP backend: enviar `public_id + claim_code` validos y confirmar `200`, `status=active`, `user_id`, `activated_at` y `claimed_at`.
-- Prueba GUI: pendiente de actualizacion frontend para capturar y enviar `claim_code`.
+- Prueba GUI: ingresar `public_id + claim_code` validos en `/dashboard`, activar y confirmar `Identificador activado correctamente.`.
 - No hay scanner QR, lectura NFC, camara, geolocalizacion, tracking, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend ni creacion admin de devices desde frontend.
 - El backend sigue siendo la fuente de autorizacion.
 
@@ -353,10 +372,12 @@ docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run b
 - `GET /login` debe responder `200 OK`.
 - `GET /dashboard` debe responder `200 OK`.
 - `GET /` debe responder `200 OK`.
+- `GET /p/{public_id_pending}` debe responder `200 OK` y mostrar onboarding.
 - `GET /p/PID-G2NYZP87KA` debe responder `200 OK`.
 - `GET /p/PID-AAAAAAAAAA` debe responder `404 Not Found`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
-- Prueba GUI de activacion: pendiente de actualizacion frontend para enviar `claim_code`.
+- Prueba GUI de onboarding: sin sesion muestra CTA login; con sesion muestra formulario `claim_code`; `claim_code` correcto activa device; `claim_code` incorrecto muestra error controlado.
+- Prueba GUI de dashboard: activar con `public_id + claim_code` y confirmar que `claim_code` no queda en `sessionStorage` ni `localStorage`.
 - Usuario admin: ve estado QR y puede generar/regenerar QR desde `/dashboard`.
 - Usuario no admin: ve `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
 
@@ -405,4 +426,4 @@ Validacion esperada para descarga QR:
 - `GET /dashboard` responde `200 OK`.
 - Prueba GUI: admin puede descargar `PID-XXXXXXXXXX.png` y QR inexistente muestra ayuda para generarlo antes.
 
-Limites actuales: el frontend todavia debe actualizarse para enviar `claim_code`, el dashboard actual puede quedar temporalmente incompatible con la nueva activacion, no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, UI first-scan, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos.
