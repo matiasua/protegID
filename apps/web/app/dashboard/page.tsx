@@ -6,7 +6,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
-import { activateDevice, getMyDevices } from "@/lib/devices";
+import { activateDeviceWithClaimCode, getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
 import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
 import { clearSessionToken, getSessionToken } from "@/lib/session";
@@ -112,7 +112,7 @@ function getDevicesErrorMessage(error: unknown): string {
 function getActivationErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
     if (error.status === 400) {
-      return "Identificador no disponible para activación.";
+      return "Datos de activación inválidos.";
     }
 
     if (error.status === 401) {
@@ -120,7 +120,15 @@ function getActivationErrorMessage(error: unknown): string {
     }
 
     if (error.status === 404) {
-      return "Identificador no encontrado.";
+      return "Identificador no disponible.";
+    }
+
+    if (error.status === 422) {
+      return "Código de activación inválido o incompleto.";
+    }
+
+    if (error.status === 429) {
+      return "Demasiados intentos. Intenta nuevamente más tarde.";
     }
   }
 
@@ -393,6 +401,7 @@ export default function DashboardPage() {
   const [qrStatusByDeviceId, setQrStatusByDeviceId] = useState<Record<string, DeviceQrStatusState>>({});
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [activationPublicId, setActivationPublicId] = useState("");
+  const [activationClaimCode, setActivationClaimCode] = useState("");
   const [profileForm, setProfileForm] = useState<ProfileFormState>(() => createEmptyProfileForm());
   const [hasExistingProfile, setHasExistingProfile] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -437,6 +446,7 @@ export default function DashboardPage() {
 
   function resetActivationForm() {
     setActivationPublicId("");
+    setActivationClaimCode("");
     setActivationErrorMessage(null);
     setActivationSuccessMessage(null);
     setIsActivatingDevice(false);
@@ -787,9 +797,11 @@ export default function DashboardPage() {
 
     const token = accessToken.trim();
     const publicId = activationPublicId.trim();
+    const claimCode = activationClaimCode.trim();
 
     setActivationErrorMessage(null);
     setActivationSuccessMessage(null);
+    setActivationClaimCode("");
 
     if (!token) {
       setActivationErrorMessage("Sesión expirada o no autenticada.");
@@ -801,20 +813,15 @@ export default function DashboardPage() {
       return;
     }
 
+    if (!claimCode) {
+      setActivationErrorMessage("Código de activación inválido o incompleto.");
+      return;
+    }
+
     setIsActivatingDevice(true);
 
     try {
-      const activatedDevice = await activateDevice(publicId, token);
-      const nextDevices = [activatedDevice, ...devices.filter((device) => device.id !== activatedDevice.id)];
-
-      setDevices(nextDevices);
-
-      if (isAdminUser(currentUser)) {
-        void loadDeviceQrStatuses(nextDevices, token);
-      } else {
-        setQrStatusByDeviceId(createUnavailableQrStatusState(nextDevices));
-      }
-
+      await activateDeviceWithClaimCode(publicId, claimCode, token);
       setActivationPublicId("");
       setActivationSuccessMessage("Identificador activado correctamente.");
 
@@ -1051,14 +1058,14 @@ export default function DashboardPage() {
                   Activar identificador
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Usa el public_id impreso o asociado al QR/NFC físico para vincularlo a tu cuenta.
+                  Ingresa el public_id del identificador y el código de activación incluido dentro del empaque.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Verifica físicamente el identificador antes de activarlo. El public_id no contiene datos médicos.
+                  El código de activación no se guarda en el navegador.
                 </p>
               </div>
 
-              <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={handleActivateIdentifier}>
+              <form className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end" onSubmit={handleActivateIdentifier}>
                 <div className="flex-1">
                   <label className="text-sm font-medium text-slate-700" htmlFor="activation-public-id">
                     Public ID
@@ -1074,7 +1081,30 @@ export default function DashboardPage() {
                     value={activationPublicId}
                   />
                 </div>
-                <Button className="w-full sm:w-auto" disabled={isActivatingDevice || activationPublicId.trim().length === 0} type="submit">
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-slate-700" htmlFor="activation-claim-code">
+                    Código de activación
+                  </label>
+                  <input
+                    autoComplete="off"
+                    className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm uppercase text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    disabled={isActivatingDevice}
+                    id="activation-claim-code"
+                    onChange={(event) => setActivationClaimCode(event.target.value)}
+                    placeholder="XXXX-XXXX-XXXX"
+                    type="text"
+                    value={activationClaimCode}
+                  />
+                </div>
+                <Button
+                  className="w-full md:w-auto"
+                  disabled={
+                    isActivatingDevice ||
+                    activationPublicId.trim().length === 0 ||
+                    activationClaimCode.trim().length === 0
+                  }
+                  type="submit"
+                >
                   {isActivatingDevice ? "Activando..." : "Activar identificador"}
                 </Button>
               </form>
