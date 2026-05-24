@@ -32,6 +32,26 @@ def upload_device_qr(public_id: str) -> str:
     return object_key
 
 
+def download_device_qr(public_id: str) -> bytes:
+    object_key = get_device_qr_object_key(public_id)
+
+    try:
+        response = get_s3_client().get_object(
+            Bucket=_get_bucket_name(),
+            Key=object_key,
+        )
+    except ClientError as error:
+        if _is_not_found_error(error):
+            raise FileNotFoundError(object_key) from error
+        raise
+
+    body = response["Body"]
+    try:
+        return body.read()
+    finally:
+        body.close()
+
+
 def device_qr_exists(public_id: str) -> bool:
     try:
         get_s3_client().head_object(

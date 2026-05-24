@@ -36,6 +36,7 @@ Servicios principales:
 - Admin device create: `http://localhost:8080/api/admin/devices`
 - Admin device QR status: `http://localhost:8080/api/admin/devices/{device_id}/qr`
 - Admin device QR generate: `http://localhost:8080/api/admin/devices/{device_id}/qr`
+- Admin device QR download: `http://localhost:8080/api/admin/devices/{device_id}/qr/download`
 - Private emergency profile: `http://localhost:8080/api/devices/{device_id}/emergency-profile`
 - Public emergency profile: `http://localhost:8080/api/public/profiles/{public_id}`
 - Web directa en desarrollo: `http://localhost:3000`
@@ -85,6 +86,7 @@ make build
 Validaciones basicas del backend:
 
 ```bash
+python3 -m py_compile apps/api/app/api/qr_codes.py apps/api/app/services/qr_storage.py
 docker compose exec protegid-api python -m compileall app alembic
 git diff --check
 ```
@@ -275,20 +277,34 @@ Endpoints admin:
 
 - `GET /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; devuelve metadata y `exists`.
 - `POST /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; genera/sube el QR y devuelve metadata.
+- `GET /api/admin/devices/{device_id}/qr/download`: requiere Bearer token y `role=admin`; descarga el PNG existente.
 
-La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
+La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. La descarga busca el device por `device_id`, usa `qr/devices/{public_id}.png`, no genera QR automaticamente, devuelve `404` si no existe y responde `Content-Type: image/png` con `Content-Disposition: attachment; filename="{public_id}.png"` si existe. No se entrega presigned URL ni se expone MinIO.
 
 ## QR Management Frontend
 
-Sprint 10 agrega gestion QR desde `/dashboard`.
+Sprint 11 agrega gestion QR desde `/dashboard` con descarga controlada del PNG.
 
 - El dashboard consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
 - El dashboard muestra `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`.
 - El dashboard permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr` para usuarios admin.
+- El dashboard permite descargar QR con el boton `Descargar QR`; durante la descarga muestra `Descargando QR...`.
+- El cliente frontend usa `downloadDeviceQr(deviceId, accessToken): Promise<Blob>`.
+- Si descarga correctamente muestra `QR descargado correctamente.`.
+- Si el QR no existe muestra `Genera el QR antes de descargarlo.`.
+- La descarga usa `URL.createObjectURL` y revoca el objeto temporal con `URL.revokeObjectURL`.
 - Si no hay permisos, muestra `La gestión de QR requiere rol admin.` y no rompe la gestion de devices/perfil.
 - El QR apunta a `/p/{public_id}` y solo contiene la URL publica del perfil.
 - La visualizacion depende de que el perfil este marcado como publico.
 - `object_key` se muestra como detalle tecnico.
-- No hay descarga PNG desde frontend, presigned URLs, preview de imagen QR, NFC funcional, tracking, geolocalizacion ni notificaciones.
+- No hay presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, descarga PNG desde frontend, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 10 no agrega nuevas tablas ni nuevas migraciones.
+Validacion esperada para descarga QR:
+
+- `GET /api/admin/devices/{device_id}/qr/download` sin token responde `401`.
+- `GET /api/admin/devices/{device_id}/qr/download` con usuario no admin responde `403`.
+- `GET /api/admin/devices/{device_id}/qr/download` con admin y QR existente responde `200` con `Content-Type: image/png`.
+- `GET /dashboard` responde `200 OK`.
+- Prueba GUI: admin puede descargar `PID-XXXXXXXXXX.png` y QR inexistente muestra ayuda para generarlo antes.
+
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 11 no agrega nuevas tablas ni nuevas migraciones.

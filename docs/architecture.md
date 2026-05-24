@@ -97,8 +97,11 @@ Endpoints admin de QR:
 
 - `POST /api/admin/devices/{device_id}/qr`
 - `GET /api/admin/devices/{device_id}/qr`
+- `GET /api/admin/devices/{device_id}/qr/download`
 
-Ambos endpoints requieren token Bearer y `role=admin`. No devuelven el archivo PNG ni entregan presigned URL. Solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
+Los endpoints requieren token Bearer y `role=admin`. `POST` genera/sube el QR y `GET /qr` devuelve metadata: `device_id`, `public_id`, `object_key`, `content_type` y `exists`.
+
+`GET /api/admin/devices/{device_id}/qr/download` busca el device por `device_id`, calcula `qr/devices/{public_id}.png`, lee el objeto desde MinIO y no genera QR automaticamente. Si el QR no existe responde `404`. Si existe responde el PNG con `Content-Type: image/png` y `Content-Disposition: attachment; filename="{public_id}.png"`. No usa presigned URLs y no expone bucket ni credenciales.
 
 ## Public Profile Frontend
 
@@ -178,11 +181,15 @@ La UX actual de `/login` tiene encabezado claro, formulario limpio, estados visi
 
 ## QR Management Frontend
 
-Sprint 10 agrega gestion QR desde el dashboard usando los endpoints admin existentes.
+Sprint 11 mantiene la gestion QR desde el dashboard y agrega descarga controlada del PNG mediante backend autenticado.
 
 - `/dashboard` consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
 - `/dashboard` permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr`.
+- `/dashboard` permite descargar QR con `GET /api/admin/devices/{device_id}/qr/download` mediante `downloadDeviceQr(deviceId, accessToken): Promise<Blob>`.
 - Estados visibles: `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`.
+- El boton de descarga muestra `Descargar QR` y, durante la solicitud, `Descargando QR...`.
+- Si la descarga es correcta, muestra `QR descargado correctamente.`.
+- Si el QR no existe, muestra `Genera el QR antes de descargarlo.`.
 - Los endpoints QR requieren Bearer token y `role=admin`.
 - Si el usuario no es admin o QR responde `403`, el frontend muestra `La gestión de QR requiere rol admin.`.
 - El dashboard no debe romper si QR responde `403`; devices y editor de perfil siguen disponibles.
@@ -191,7 +198,9 @@ Sprint 10 agrega gestion QR desde el dashboard usando los endpoints admin existe
 - El QR no incluye datos medicos embebidos.
 - La visualizacion publica depende de `emergency_profile.is_public == true`.
 - `object_key` se muestra como detalle tecnico.
-- No hay descarga PNG desde frontend, presigned URLs, preview de imagen QR, NFC funcional, tracking, geolocalizacion ni notificaciones.
+- La descarga usa `URL.createObjectURL(blob)` y revoca el objeto temporal con `URL.revokeObjectURL()`.
+- No se expone URL publica de MinIO, bucket ni credenciales.
+- No hay presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
 ## Seguridad de esta version
 
@@ -216,9 +225,9 @@ Sprint 10 agrega gestion QR desde el dashboard usando los endpoints admin existe
 - No hay roles avanzados en frontend.
 - No hay expiracion visual previa del token.
 - No hay subida de archivos medicos.
-- No hay descarga PNG desde frontend.
 - No hay presigned URLs.
 - No hay preview de imagen QR.
+- No hay apertura directa de MinIO.
 - No hay NFC funcional.
 - No hay tracking de escaneos.
 - No hay geolocalizacion.
@@ -228,9 +237,9 @@ Los endpoints privados siguen protegidos por Bearer token. El frontend solo cons
 
 ## Limites de esta etapa
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, descarga PNG desde frontend, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 10 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 11 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
 

@@ -137,11 +137,15 @@ UX actual de `/dashboard`: validacion automatica si existe token temporal, secci
 
 ## QR Management Frontend
 
-Sprint 10 agrega gestion QR desde `/dashboard` sin descargar ni previsualizar imagenes.
+Sprint 11 agrega gestion QR desde `/dashboard` con descarga controlada del PNG desde backend autenticado.
 
 - El dashboard consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
 - El dashboard permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr`.
+- El dashboard permite descargar el PNG con `GET /api/admin/devices/{device_id}/qr/download` mediante el cliente `downloadDeviceQr(deviceId, accessToken): Promise<Blob>`.
 - Estados visibles por dispositivo: `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`.
+- Durante la descarga muestra `Descargando QR...`.
+- Si la descarga termina correctamente muestra `QR descargado correctamente.`.
+- Si el QR no existe, el dashboard indica `Genera el QR antes de descargarlo.`.
 - Los endpoints QR requieren Bearer token y `role=admin`.
 - Si el usuario no es admin o QR responde `403`, el frontend muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices y editor de perfil.
 - El backend sigue siendo la fuente de autorizacion.
@@ -149,22 +153,30 @@ Sprint 10 agrega gestion QR desde `/dashboard` sin descargar ni previsualizar im
 - El QR solo contiene la URL publica del perfil; no incluye datos medicos embebidos.
 - La visualizacion depende de que el perfil este marcado como publico con `is_public=true`.
 - `object_key` se muestra como detalle tecnico.
-- No hay descarga PNG desde frontend, presigned URLs, preview de imagen QR, apertura de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
+- La descarga genera un objeto temporal en el navegador con `URL.createObjectURL(blob)` y luego lo revoca con `URL.revokeObjectURL()`.
+- La descarga obtiene el PNG desde el backend autenticado. No se expone URL publica de MinIO.
+- No hay presigned URLs, preview de imagen QR, apertura de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
 Validacion esperada:
 
+- `python3 -m py_compile apps/api/app/api/qr_codes.py apps/api/app/services/qr_storage.py`
 - `docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"`
 - `GET /` responde `200 OK`.
 - `GET /login` responde `200 OK`.
 - `GET /dashboard` responde `200 OK`.
 - `GET /p/PID-G2NYZP87KA` responde `200 OK`.
 - `GET /p/PID-AAAAAAAAAA` responde `404 Not Found`.
+- `GET /api/admin/devices/{device_id}/qr/download` sin token responde `401`.
+- `GET /api/admin/devices/{device_id}/qr/download` con usuario no admin responde `403`.
+- `GET /api/admin/devices/{device_id}/qr/download` con admin y QR existente responde `200` con `Content-Type: image/png`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
 - Usuario admin: ve estado QR y puede generar/regenerar QR.
+- Usuario admin: puede descargar `PID-XXXXXXXXXX.png` desde Gestion QR.
+- QR inexistente: muestra ayuda para generarlo antes de descargarlo.
 - Usuario no admin: ve `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9 y QR Management Frontend de Sprint 10.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10 y descarga controlada de QR de Sprint 11.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, descarga PNG desde frontend, presigned URLs, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones. Para produccion se evaluara una estrategia de sesion mas robusta.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones. Para produccion se evaluara una estrategia de sesion mas robusta.

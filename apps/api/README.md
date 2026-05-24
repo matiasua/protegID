@@ -14,6 +14,7 @@ Backend FastAPI para ProtegID.
 - `POST /api/admin/devices`
 - `GET /api/admin/devices/{device_id}/qr`
 - `POST /api/admin/devices/{device_id}/qr`
+- `GET /api/admin/devices/{device_id}/qr/download`
 - `GET /api/devices/{device_id}/emergency-profile`
 - `PUT /api/devices/{device_id}/emergency-profile`
 - `GET /api/public/profiles/{public_id}`
@@ -93,8 +94,11 @@ Endpoints admin:
 
 - `GET /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; devuelve metadata y `exists`.
 - `POST /api/admin/devices/{device_id}/qr`: requiere Bearer token y `role=admin`; genera/sube el QR y devuelve metadata.
+- `GET /api/admin/devices/{device_id}/qr/download`: requiere Bearer token y `role=admin`; descarga el PNG existente.
 
-La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
+La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
+
+La descarga busca el device por `device_id`, calcula `qr/devices/{public_id}.png`, lee el objeto QR desde MinIO y no genera QR automaticamente. Si el QR no existe responde `404`. Si existe responde `Content-Type: image/png` y `Content-Disposition: attachment; filename="{public_id}.png"`. No usa presigned URLs y no expone bucket ni credenciales.
 
 ## Integracion con frontend publico
 
@@ -113,7 +117,7 @@ El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost
 
 ## Integracion con frontend privado
 
-El frontend privado existe en `/login` y `/dashboard`; Sprint 10 agrega gestion QR desde el dashboard sin cambiar endpoints ni auth backend.
+El frontend privado existe en `/login` y `/dashboard`; Sprint 11 agrega gestion QR con descarga controlada desde el dashboard sin cambiar auth backend.
 
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
@@ -130,11 +134,17 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 10 agrega gestion 
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
 - Consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
 - Permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
+- Permite descargar QR con `GET /api/admin/devices/{device_id}/qr/download` mediante `downloadDeviceQr(deviceId, accessToken): Promise<Blob>`.
 - Muestra estados QR `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`.
+- Durante la descarga muestra `Descargando QR...`.
+- Si descarga correctamente muestra `QR descargado correctamente.`.
+- Si el QR no existe muestra `Genera el QR antes de descargarlo.`.
 - Si el usuario no es admin o QR responde `403`, muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
 - El QR apunta a `/p/{public_id}`, solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
 - `object_key` se muestra como detalle tecnico.
-- No hay descarga PNG desde frontend, presigned URLs ni preview de imagen QR.
+- La descarga usa `URL.createObjectURL` y luego `URL.revokeObjectURL`.
+- La descarga obtiene el PNG desde el backend autenticado; no expone URL publica de MinIO.
+- No hay presigned URLs ni preview de imagen QR.
 - `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
 - Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
@@ -209,6 +219,15 @@ curl -X POST http://localhost:8000/api/admin/devices/<device_id>/qr \
   -H 'Authorization: Bearer <admin_access_token>'
 ```
 
+Download device QR as admin:
+
+```bash
+curl -OJ http://localhost:8000/api/admin/devices/<device_id>/qr/download \
+  -H 'Authorization: Bearer <admin_access_token>'
+```
+
+La descarga responde `401` sin token, `403` con usuario no admin, `404` si el device o el QR no existe y `200 image/png` si el QR existe.
+
 Get private emergency profile:
 
 ```bash
@@ -233,6 +252,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, descarga PNG desde frontend, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
 
-Sprint 10 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.
+Sprint 11 no agrega nuevas tablas ni nuevas migraciones.
