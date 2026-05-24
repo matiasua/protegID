@@ -322,15 +322,65 @@ function formatActivatedAt(value: string | null): string {
   }).format(date);
 }
 
-function getDeviceStatusClass(status: string): string {
-  const normalizedStatus = status.toLowerCase();
+function getDeviceStatusLabel(status: Device["status"]): string {
+  if (status === "pending_activation") {
+    return "Pendiente de activación";
+  }
 
-  if (normalizedStatus.includes("inactive") || normalizedStatus.includes("desactiv")) {
+  if (status === "active") {
+    return "Activo";
+  }
+
+  if (status === "disabled") {
+    return "Deshabilitado";
+  }
+
+  return "Reportado como perdido";
+}
+
+function getDeviceStatusDescription(status: Device["status"]): string {
+  if (status === "pending_activation") {
+    return "Este identificador aún no está vinculado a una cuenta.";
+  }
+
+  if (status === "active") {
+    return "Este identificador está activo y puede usarse con perfil público y QR.";
+  }
+
+  if (status === "disabled") {
+    return "Este identificador está deshabilitado y no debería usarse operacionalmente.";
+  }
+
+  return "Este identificador fue reportado como perdido. Verifica antes de reutilizarlo.";
+}
+
+function getDeviceStatusWarning(status: Device["status"]): string | null {
+  if (status === "pending_activation") {
+    return "Debe activarse antes de operar con perfil público o QR.";
+  }
+
+  if (status === "disabled" || status === "lost") {
+    return "Las acciones operacionales están deshabilitadas para este estado.";
+  }
+
+  return null;
+}
+
+function isDeviceOperational(status: Device["status"]): boolean {
+  return status === "active";
+}
+
+function getDeviceStatusClass(status: Device["status"]): string {
+  if (status === "active") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  if (status === "disabled") {
     return "border-slate-200 bg-slate-50 text-slate-700";
   }
 
-  if (normalizedStatus.includes("active") || normalizedStatus.includes("activo")) {
-    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "lost") {
+    return "border-red-200 bg-red-50 text-red-800";
   }
 
   return "border-amber-200 bg-amber-50 text-amber-900";
@@ -1001,10 +1051,10 @@ export default function DashboardPage() {
                   Activar identificador
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Ingresa el public_id impreso o asociado al QR/NFC para vincularlo a tu cuenta.
+                  Usa el public_id impreso o asociado al QR/NFC físico para vincularlo a tu cuenta.
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  El public_id no es un dato médico. Verifica físicamente el identificador antes de activarlo.
+                  Verifica físicamente el identificador antes de activarlo. El public_id no contiene datos médicos.
                 </p>
               </div>
 
@@ -1071,15 +1121,18 @@ export default function DashboardPage() {
                 {devices.map((device) => {
                   const isSelectedDevice = selectedDevice?.id === device.id;
                   const qrStatusState = qrStatusByDeviceId[device.id];
+                  const canOperateDevice = isDeviceOperational(device.status);
+                  const deviceStatusWarning = getDeviceStatusWarning(device.status);
                   const qrActionButtonLabel = qrStatusState?.isGenerating
                     ? "Generando QR..."
                     : qrStatusState?.status?.exists
                       ? "Regenerar QR"
                       : "Generar QR";
                   const qrDownloadButtonLabel = qrStatusState?.isDownloading ? "Descargando QR..." : "Descargar QR";
-                  const isQrActionDisabled = !canManageQr || !qrStatusState || qrStatusState.isLoading || qrStatusState.isGenerating || qrStatusState.isDownloading;
+                  const isQrActionDisabled = !canManageQr || !canOperateDevice || !qrStatusState || qrStatusState.isLoading || qrStatusState.isGenerating || qrStatusState.isDownloading;
                   const isQrDownloadDisabled =
                     !canManageQr ||
+                    !canOperateDevice ||
                     accessToken.trim().length === 0 ||
                     !qrStatusState ||
                     qrStatusState.isLoading ||
@@ -1088,6 +1141,7 @@ export default function DashboardPage() {
                     qrStatusState.hasError ||
                     !qrStatusState.status?.exists;
                   const shouldShowQrDownloadHelp =
+                    canOperateDevice &&
                     qrStatusState !== undefined &&
                     !qrStatusState.isLoading &&
                     !qrStatusState.hasError &&
@@ -1110,9 +1164,19 @@ export default function DashboardPage() {
                         </p>
                       </div>
                       <span className={`mt-2 rounded-full border px-3 py-1 text-xs font-semibold sm:mt-0 ${getDeviceStatusClass(device.status)}`}>
-                        {device.status}
+                        {getDeviceStatusLabel(device.status)}
                       </span>
                     </div>
+
+                    <p className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-600">
+                      {getDeviceStatusDescription(device.status)}
+                    </p>
+
+                    {deviceStatusWarning ? (
+                      <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+                        {deviceStatusWarning}
+                      </p>
+                    ) : null}
 
                     {isSelectedDevice ? (
                       <p className="mt-4 rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-sky-800">
@@ -1193,7 +1257,7 @@ export default function DashboardPage() {
                     <div className="mt-5">
                       <Button
                         className="w-full sm:w-auto"
-                        disabled={isLoadingProfile || isSavingProfile}
+                        disabled={!canOperateDevice || isLoadingProfile || isSavingProfile}
                         onClick={() => handleEditProfile(device)}
                         type="button"
                         variant={isSelectedDevice ? "default" : "outline"}
