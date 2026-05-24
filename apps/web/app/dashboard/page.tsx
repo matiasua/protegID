@@ -150,7 +150,7 @@ function getQrDownloadErrorMessage(error: unknown): string {
     }
 
     if (error.status === 404) {
-      return "QR no encontrado.";
+      return "QR no encontrado. Genera el QR antes de descargarlo.";
     }
   }
 
@@ -619,7 +619,7 @@ export default function DashboardPage() {
           hasError: currentStatuses[device.id]?.hasError ?? false,
           actionMessage: {
             kind: "error",
-            text: "QR no encontrado.",
+            text: "QR no encontrado. Genera el QR antes de descargarlo.",
           },
         },
       }));
@@ -954,6 +954,11 @@ export default function DashboardPage() {
                     qrStatusState.isDownloading ||
                     qrStatusState.hasError ||
                     !qrStatusState.status?.exists;
+                  const shouldShowQrDownloadHelp =
+                    qrStatusState !== undefined &&
+                    !qrStatusState.isLoading &&
+                    !qrStatusState.hasError &&
+                    !qrStatusState.status?.exists;
 
                   return (
                   <article
@@ -1044,6 +1049,12 @@ export default function DashboardPage() {
                           {qrDownloadButtonLabel}
                         </Button>
                       </div>
+                      {shouldShowQrDownloadHelp ? (
+                        <p className="mt-2 text-xs text-slate-500">Genera el QR antes de descargarlo.</p>
+                      ) : null}
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        La descarga obtiene el PNG desde el backend autenticado. No se expone URL pública de MinIO.
+                      </p>
                     </div>
 
                     <div className="mt-5">
