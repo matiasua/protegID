@@ -1,6 +1,6 @@
 """Endpoints protegidos de dispositivos."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -11,6 +11,9 @@ from app.services.claim_codes import verify_claim_code
 from app.services.devices import create_pending_device
 
 router = APIRouter(tags=["devices"])
+
+MAX_CLAIM_ATTEMPTS = 5
+CLAIM_LOCK_MINUTES = 15
 
 
 @router.get("/api/devices", response_model=list[DeviceRead])
@@ -43,13 +46,23 @@ def activate_device(
             detail="Identifier cannot be activated",
         )
 
+    now = datetime.now(UTC)
+    if device.claim_locked_until is not None and device.claim_locked_until > now:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many activation attempts. Try again later.",
+        )
+
     if not verify_claim_code(payload.claim_code, device.claim_code_hash):
+        device.claim_attempts = (device.claim_attempts or 0) + 1
+        if device.claim_attempts >= MAX_CLAIM_ATTEMPTS:
+            device.claim_locked_until = now + timedelta(minutes=CLAIM_LOCK_MINUTES)
+        session.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid activation data",
         )
 
-    now = datetime.now(UTC)
     device.user_id = current_user.id
     device.status = "active"
     device.activated_at = now
