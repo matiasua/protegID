@@ -17,6 +17,22 @@ function createDeviceQrRequestError(status: number): ApiRequestError {
   return new ApiRequestError("No se pudo completar la operacion de QR.", status);
 }
 
+function createDeviceQrDownloadRequestError(status: number): ApiRequestError {
+  if (status === 401) {
+    return new ApiRequestError("Sesion no autenticada o expirada.", status);
+  }
+
+  if (status === 403) {
+    return new ApiRequestError("Se requiere rol admin para descargar QR.", status);
+  }
+
+  if (status === 404) {
+    return new ApiRequestError("QR o dispositivo no encontrado.", status);
+  }
+
+  return new ApiRequestError("No se pudo descargar el QR.", status);
+}
+
 export async function getDeviceQrStatus(
   deviceId: string,
   accessToken: string,
@@ -67,4 +83,32 @@ export async function createDeviceQr(
   }
 
   return (await response.json()) as DeviceQrMetadata;
+}
+
+export async function downloadDeviceQr(
+  deviceId: string,
+  accessToken: string,
+): Promise<Blob> {
+  const url = buildApiUrl(
+    `/api/admin/devices/${encodeURIComponent(deviceId)}/qr/download`,
+  );
+
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+  } catch {
+    throw new ApiRequestError("No se pudo descargar el QR.", 0);
+  }
+
+  if (!response.ok) {
+    throw createDeviceQrDownloadRequestError(response.status);
+  }
+
+  return response.blob();
 }
