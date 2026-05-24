@@ -8,7 +8,7 @@ import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
-import { getDeviceQrStatus } from "@/lib/qr-codes";
+import { createDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
 import { clearSessionToken, getSessionToken } from "@/lib/session";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
@@ -41,10 +41,17 @@ type ValidateSessionOptions = {
   updateTokenInput?: boolean;
 };
 
+type DeviceQrActionMessage = {
+  kind: "success" | "error";
+  text: string;
+};
+
 type DeviceQrStatusState = {
   isLoading: boolean;
+  isGenerating: boolean;
   status: DeviceQrStatus | null;
   hasError: boolean;
+  actionMessage: DeviceQrActionMessage | null;
 };
 
 type ProfileFieldGroup = {
@@ -113,14 +120,34 @@ function getProfileErrorMessage(error: unknown, fallbackMessage: string): string
   return fallbackMessage;
 }
 
+function getQrGenerationErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 401) {
+      return "Sesión expirada o no autenticada.";
+    }
+
+    if (error.status === 403) {
+      return "La gestión de QR requiere rol admin.";
+    }
+
+    if (error.status === 404) {
+      return "Dispositivo no encontrado.";
+    }
+  }
+
+  return "No se pudo generar el QR.";
+}
+
 function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
   return Object.fromEntries(
     devices.map<[string, DeviceQrStatusState]>((device) => [
       device.id,
       {
         isLoading: true,
+        isGenerating: false,
         status: null,
         hasError: false,
+        actionMessage: null,
       },
     ]),
   );
@@ -148,6 +175,14 @@ function getQrStatusClass(qrStatusState: DeviceQrStatusState | undefined): strin
   }
 
   if (qrStatusState.status?.exists) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-900";
+}
+
+function getQrActionMessageClass(message: DeviceQrActionMessage): string {
+  if (message.kind === "success") {
     return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
 
@@ -354,8 +389,10 @@ export default function DashboardPage() {
             ...currentStatuses,
             [device.id]: {
               isLoading: false,
+              isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
               status: qrStatus,
               hasError: false,
+              actionMessage: currentStatuses[device.id]?.actionMessage ?? null,
             },
           }));
         } catch (error) {
@@ -367,13 +404,87 @@ export default function DashboardPage() {
             ...currentStatuses,
             [device.id]: {
               isLoading: false,
+              isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
               status: null,
               hasError: true,
+              actionMessage: currentStatuses[device.id]?.actionMessage ?? null,
             },
           }));
         }
       }),
     );
+  }
+
+  async function handleGenerateDeviceQr(device: Device) {
+    const token = accessToken.trim();
+
+    if (!token || !currentUser) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: "Sesión expirada o no autenticada.",
+          },
+        },
+      }));
+      return;
+    }
+
+    setQrStatusByDeviceId((currentStatuses) => ({
+      ...currentStatuses,
+      [device.id]: {
+        isLoading: currentStatuses[device.id]?.isLoading ?? false,
+        isGenerating: true,
+        status: currentStatuses[device.id]?.status ?? null,
+        hasError: currentStatuses[device.id]?.hasError ?? false,
+        actionMessage: null,
+      },
+    }));
+
+    try {
+      const qrMetadata = await createDeviceQr(device.id, token);
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: false,
+          isGenerating: false,
+          status: {
+            ...qrMetadata,
+            exists: true,
+          },
+          hasError: false,
+          actionMessage: {
+            kind: "success",
+            text: "QR generado correctamente.",
+          },
+        },
+      }));
+    } catch (error) {
+      const message = getQrGenerationErrorMessage(error);
+
+      if (error instanceof ApiRequestError && error.status === 403) {
+        setQrAdminMessage("La gestión de QR requiere rol admin.");
+      }
+
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: false,
+          isGenerating: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: message,
+          },
+        },
+      }));
+    }
   }
 
   async function handleValidateSession(event: FormEvent<HTMLFormElement>) {
@@ -617,6 +728,11 @@ export default function DashboardPage() {
                 {devices.map((device) => {
                   const isSelectedDevice = selectedDevice?.id === device.id;
                   const qrStatusState = qrStatusByDeviceId[device.id];
+                  const qrActionButtonLabel = qrStatusState?.isGenerating
+                    ? "Generando QR..."
+                    : qrStatusState?.status?.exists
+                      ? "Regenerar QR"
+                      : "Generar QR";
 
                   return (
                   <article
@@ -669,6 +785,22 @@ export default function DashboardPage() {
                           {qrStatusState.status.object_key}
                         </p>
                       ) : null}
+
+                      {qrStatusState?.actionMessage ? (
+                        <p className={`mt-3 rounded-xl border px-3 py-2 text-sm ${getQrActionMessageClass(qrStatusState.actionMessage)}`}>
+                          {qrStatusState.actionMessage.text}
+                        </p>
+                      ) : null}
+
+                      <Button
+                        className="mt-4 w-full sm:w-auto"
+                        disabled={!currentUser || qrStatusState?.isGenerating === true}
+                        onClick={() => void handleGenerateDeviceQr(device)}
+                        type="button"
+                        variant="outline"
+                      >
+                        {qrActionButtonLabel}
+                      </Button>
                     </div>
 
                     <div className="mt-5">
