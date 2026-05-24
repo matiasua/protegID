@@ -138,6 +138,10 @@ function getQrGenerationErrorMessage(error: unknown): string {
   return "No se pudo generar el QR.";
 }
 
+function isAdminUser(user: AuthUser | null): boolean {
+  return user?.role.toLowerCase() === "admin";
+}
+
 function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
   return Object.fromEntries(
     devices.map<[string, DeviceQrStatusState]>((device) => [
@@ -153,7 +157,26 @@ function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrS
   );
 }
 
+function createUnavailableQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
+  return Object.fromEntries(
+    devices.map<[string, DeviceQrStatusState]>((device) => [
+      device.id,
+      {
+        isLoading: false,
+        isGenerating: false,
+        status: null,
+        hasError: true,
+        actionMessage: null,
+      },
+    ]),
+  );
+}
+
 function getQrStatusLabel(qrStatusState: DeviceQrStatusState | undefined): string {
+  if (qrStatusState?.isGenerating) {
+    return "Generando QR...";
+  }
+
   if (!qrStatusState || qrStatusState.isLoading) {
     return "Consultando QR...";
   }
@@ -166,6 +189,10 @@ function getQrStatusLabel(qrStatusState: DeviceQrStatusState | undefined): strin
 }
 
 function getQrStatusClass(qrStatusState: DeviceQrStatusState | undefined): string {
+  if (qrStatusState?.isGenerating) {
+    return "border-sky-100 bg-sky-50 text-sky-800";
+  }
+
   if (!qrStatusState || qrStatusState.isLoading) {
     return "border-sky-100 bg-sky-50 text-sky-800";
   }
@@ -288,6 +315,8 @@ export default function DashboardPage() {
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const qrPermissionMessage = currentUser && !isAdminUser(currentUser) ? "La gestión de QR requiere rol admin." : qrAdminMessage;
+  const canManageQr = currentUser !== null && isAdminUser(currentUser) && qrPermissionMessage === null;
 
   useEffect(() => {
     const storedToken = getSessionToken();
@@ -329,6 +358,8 @@ export default function DashboardPage() {
   }
 
   async function validateAccessToken(token: string, options: ValidateSessionOptions = {}) {
+    let validatedUser: AuthUser | null = null;
+
     setErrorMessage(null);
     setDeviceErrorMessage(null);
     setQrAdminMessage(null);
@@ -347,6 +378,7 @@ export default function DashboardPage() {
 
     try {
       const user = await getCurrentUser(token);
+      validatedUser = user;
       setCurrentUser(user);
     } catch (error) {
       if (options.clearStoredTokenOnFailure) {
@@ -365,7 +397,12 @@ export default function DashboardPage() {
     try {
       const userDevices = await getMyDevices(token);
       setDevices(userDevices);
-      void loadDeviceQrStatuses(userDevices, token);
+
+      if (isAdminUser(validatedUser)) {
+        void loadDeviceQrStatuses(userDevices, token);
+      } else {
+        setQrStatusByDeviceId(createUnavailableQrStatusState(userDevices));
+      }
     } catch (error) {
       setDeviceErrorMessage(getDevicesErrorMessage(error));
     } finally {
@@ -429,6 +466,23 @@ export default function DashboardPage() {
           actionMessage: {
             kind: "error",
             text: "Sesión expirada o no autenticada.",
+          },
+        },
+      }));
+      return;
+    }
+
+    if (!isAdminUser(currentUser) || qrAdminMessage !== null) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: "La gestión de QR requiere rol admin.",
           },
         },
       }));
@@ -711,9 +765,9 @@ export default function DashboardPage() {
               </p>
             ) : null}
 
-            {qrAdminMessage ? (
+            {qrPermissionMessage ? (
               <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                {qrAdminMessage}
+                {qrPermissionMessage}
               </p>
             ) : null}
 
@@ -733,6 +787,7 @@ export default function DashboardPage() {
                     : qrStatusState?.status?.exists
                       ? "Regenerar QR"
                       : "Generar QR";
+                  const isQrActionDisabled = !canManageQr || !qrStatusState || qrStatusState.isLoading || qrStatusState.isGenerating;
 
                   return (
                   <article
@@ -772,18 +827,29 @@ export default function DashboardPage() {
                       </div>
                     </dl>
 
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm font-medium text-slate-500">Estado QR</p>
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-950">Gestión QR</h4>
+                          <p className="mt-1 text-sm leading-6 text-slate-600">
+                            Apunta al perfil público <span className="font-mono text-slate-800">/p/{device.public_id}</span>.
+                          </p>
+                        </div>
                         <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getQrStatusClass(qrStatusState)}`}>
                           {getQrStatusLabel(qrStatusState)}
                         </span>
                       </div>
 
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                        <p>El QR solo contiene la URL pública del perfil. No incluye datos médicos embebidos.</p>
+                        <p className="mt-1">La visualización depende de que el perfil esté marcado como público.</p>
+                      </div>
+
                       {qrStatusState?.status?.object_key ? (
-                        <p className="mt-3 break-all font-mono text-xs text-slate-500">
-                          {qrStatusState.status.object_key}
-                        </p>
+                        <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          <summary className="cursor-pointer font-medium text-slate-700">Detalle técnico</summary>
+                          <p className="mt-2 break-all font-mono text-slate-500">{qrStatusState.status.object_key}</p>
+                        </details>
                       ) : null}
 
                       {qrStatusState?.actionMessage ? (
@@ -794,7 +860,7 @@ export default function DashboardPage() {
 
                       <Button
                         className="mt-4 w-full sm:w-auto"
-                        disabled={!currentUser || qrStatusState?.isGenerating === true}
+                        disabled={isQrActionDisabled}
                         onClick={() => void handleGenerateDeviceQr(device)}
                         type="button"
                         variant="outline"
