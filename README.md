@@ -138,7 +138,7 @@ UX actual de `/dashboard`: validacion automatica si existe token temporal, secci
 
 ## Device Activation UX
 
-Sprint 12 agrega activacion de identificadores desde `/dashboard` sin cambiar backend ni el flujo publico.
+Sprint 12 agrega activacion de identificadores desde `/dashboard` sin cambiar backend ni el flujo publico. Este flujo actual activa solo con `public_id` y queda considerado insuficiente para el flujo comercial real con identificadores fisicos.
 
 - La seccion `Activar identificador` permite vincular un identificador fisico a la cuenta autenticada.
 - El formulario usa un input `public_id`, placeholder `PID-XXXXXXXXXX` y boton `Activar identificador`.
@@ -161,7 +161,7 @@ Content-Type: application/json
 { "public_id": "PID-XXXXXXXXXX" }
 ```
 
-El endpoint activa/asocia un device `pending_activation` al usuario autenticado, cambia `status` a `active` y setea `user_id` y `activated_at` segun la logica backend existente.
+El endpoint activa/asocia un device `pending_activation` al usuario autenticado, cambia `status` a `active` y setea `user_id` y `activated_at` segun la logica backend existente. Para el flujo comercial real, el proximo paso debe endurecer este endpoint o reemplazarlo para requerir `public_id + claim_code`.
 
 Estados visibles de device en dashboard:
 
@@ -171,6 +171,66 @@ Estados visibles de device en dashboard:
 - `lost` -> `Reportado como perdido`.
 
 El dashboard muestra una descripcion operacional por estado y deshabilita acciones sensibles para estados no activos cuando aplica.
+
+## First Scan Activation Foundation
+
+Sprint 13 prepara la base tecnica para activacion segura en primer escaneo con `claim_code`.
+
+Flujo de negocio objetivo:
+
+- ProtegID vendera identificadores fisicos con QR impreso y NFC grabado.
+- QR/NFC apuntan a la URL publica permanente `/p/{public_id}`.
+- `public_id` es publico y no debe ser secuencial.
+- `claim_code` es privado y viene dentro del empaque fisico.
+- `claim_code` no va en QR/NFC, no va en URL, no debe loguearse y no debe guardarse en texto plano.
+- El backend debe guardar solo hash del `claim_code`.
+
+Campos agregados a `Device` para preparar activacion segura:
+
+- `claim_code_hash`: hash del codigo privado; nullable por compatibilidad con devices existentes.
+- `claimed_at`: fecha/hora en que el device fue reclamado correctamente.
+- `claim_attempts`: contador de intentos de claim.
+- `claim_locked_until`: bloqueo temporal por intentos fallidos.
+
+Estos campos no se exponen por API.
+
+Servicio `apps/api/app/services/claim_codes.py`:
+
+- `generate_claim_code()` genera codigos con formato `XXXX-XXXX-XXXX`.
+- `normalize_claim_code()` acepta codigo con o sin guiones y normaliza a uppercase con guiones.
+- `hash_claim_code()` normaliza y reutiliza `hash_password()`.
+- `verify_claim_code()` normaliza y reutiliza `verify_password()`.
+- Usa `secrets` para generacion y caracteres no ambiguos.
+- No loguea `claim_code` ni persiste el codigo plano.
+
+Endpoint publico de estado de activacion:
+
+```http
+GET /api/public/devices/{public_id}/activation-status
+```
+
+- No requiere autenticacion.
+- Responde `200 OK` solo si el device existe y `status == "pending_activation"`.
+- Respuesta minima: `{ "public_id": "PID-XXXXXXXXXX", "activation_required": true, "status": "pending_activation" }`.
+- Para `active`, `disabled`, `lost` o inexistente responde `404` generico.
+- No revela owner, `user_id`, `claim_code_hash`, `claimed_at`, `claim_attempts`, `claim_locked_until`, datos medicos ni perfil.
+
+Limites actuales de Sprint 13:
+
+- Aun no se modifico `POST /api/devices/activate`.
+- Aun no se exige `claim_code` en activacion.
+- Aun no existe UI first-scan en `/p/{public_id}`.
+- Aun no existe registro de usuario final desde primer escaneo.
+- Aun no existe provisionamiento masivo con export de `claim_code`.
+- Aun no hay rate limit completo aplicado al endpoint de claim.
+- Aun no hay auditoria formal de intentos.
+
+Validacion esperada:
+
+- `python3 -m py_compile apps/api/app/models/device.py apps/api/app/services/claim_codes.py apps/api/app/api/public_devices.py apps/api/app/main.py apps/api/app/schemas/device.py`
+- `docker compose exec -T protegid-api alembic upgrade head`
+- `GET /api/public/devices/{public_id}/activation-status` con `pending_activation` -> `200`.
+- `GET /api/public/devices/{public_id}/activation-status` con `active`, `disabled`, `lost` o inexistente -> `404`.
 
 ## QR Management Frontend
 
@@ -215,6 +275,6 @@ Validacion esperada:
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11 y Device Activation UX de Sprint 12.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12 y First Scan Activation Foundation de Sprint 13.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend ni creacion admin de devices desde frontend. Para produccion se evaluara una estrategia de sesion mas robusta.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, UI first-scan en `/p/{public_id}`, activacion obligatoria con `claim_code`, provisionamiento masivo con export de `claim_code`, rate limit completo para claim ni auditoria formal de intentos. Para produccion se evaluara una estrategia de sesion mas robusta.

@@ -33,6 +33,7 @@ Servicios principales:
 - Auth me: `http://localhost:8080/api/auth/me`
 - Devices list: `http://localhost:8080/api/devices`
 - Device activate: `http://localhost:8080/api/devices/activate`
+- Public device activation status: `http://localhost:8080/api/public/devices/{public_id}/activation-status`
 - Admin device create: `http://localhost:8080/api/admin/devices`
 - Admin device QR status: `http://localhost:8080/api/admin/devices/{device_id}/qr`
 - Admin device QR generate: `http://localhost:8080/api/admin/devices/{device_id}/qr`
@@ -86,7 +87,7 @@ make build
 Validaciones basicas del backend:
 
 ```bash
-python3 -m py_compile apps/api/app/api/qr_codes.py apps/api/app/services/qr_storage.py
+python3 -m py_compile apps/api/app/models/device.py apps/api/app/services/claim_codes.py apps/api/app/api/public_devices.py apps/api/app/main.py apps/api/app/schemas/device.py
 docker compose exec protegid-api python -m compileall app alembic
 git diff --check
 ```
@@ -122,6 +123,7 @@ La API incluye la base de dispositivos:
 - Relacion nullable `devices.user_id -> users.id`.
 - `public_id` con formato `PID-XXXXXXXXXX`.
 - Alfabeto seguro para `public_id`: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
+- Campos de claim seguro: `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until`.
 
 Estados actuales:
 
@@ -135,8 +137,51 @@ Endpoints protegidos:
 - `GET /api/devices`: requiere Bearer token y solo lista devices del usuario autenticado.
 - `POST /api/devices/activate`: requiere Bearer token y body `{ "public_id": "PID-XXXXXXXXXX" }`; activa/asocia un device `pending_activation` por `public_id`, cambia `status` a `active` y setea `user_id` y `activated_at`.
 - `POST /api/admin/devices`: requiere Bearer token y `role=admin`; crea un device `pending_activation`.
+- `GET /api/public/devices/{public_id}/activation-status`: no requiere autenticacion y responde `200` solo para devices `pending_activation`.
 
-`public_id` no es secuencial, no expone el UUID interno completo y no contiene datos medicos.
+`public_id` no es secuencial, no expone el UUID interno completo y no contiene datos medicos. `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until` no se exponen por API.
+
+## First Scan Activation Foundation
+
+Flujo de negocio objetivo:
+
+- ProtegID vendera identificadores fisicos con QR impreso y NFC grabado.
+- QR/NFC apuntan a `/p/{public_id}`.
+- `public_id` es publico.
+- `claim_code` es privado y viene dentro del empaque fisico.
+- `claim_code` no va en QR/NFC, no va en URL, no debe loguearse y no debe guardarse en texto plano.
+
+Servicio backend:
+
+- `generate_claim_code()` genera formato `XXXX-XXXX-XXXX` con caracteres no ambiguos y `secrets`.
+- `normalize_claim_code()` acepta codigo con o sin guiones.
+- `hash_claim_code()` reutiliza `hash_password()`.
+- `verify_claim_code()` reutiliza `verify_password()`.
+
+Endpoint publico de estado:
+
+```bash
+curl http://localhost:8000/api/public/devices/PID-XXXXXXXXXX/activation-status
+```
+
+- Para `pending_activation`: `200 OK` con `public_id`, `activation_required` y `status`.
+- Para `active`, `disabled`, `lost` o inexistente: `404` generico.
+- No revela owner, `user_id`, `claim_code_hash`, `claimed_at`, `claim_attempts`, `claim_locked_until`, datos medicos ni perfil.
+
+Validacion esperada:
+
+```bash
+python3 -m py_compile apps/api/app/models/device.py apps/api/app/services/claim_codes.py apps/api/app/api/public_devices.py apps/api/app/main.py apps/api/app/schemas/device.py
+docker compose exec -T protegid-api alembic upgrade head
+```
+
+- `GET /api/public/devices/{public_id}/activation-status` con `pending_activation` debe responder `200`.
+- `GET /api/public/devices/{public_id}/activation-status` con `active` debe responder `404`.
+- `GET /api/public/devices/{public_id}/activation-status` con `disabled` debe responder `404`.
+- `GET /api/public/devices/{public_id}/activation-status` con `lost` debe responder `404`.
+- `GET /api/public/devices/{public_id}/activation-status` con inexistente debe responder `404`.
+
+Limites actuales: `POST /api/devices/activate` aun no exige `claim_code`, no existe UI first-scan en `/p/{public_id}`, no existe registro de usuario final desde primer escaneo, no existe provisionamiento masivo con export de `claim_code`, no hay rate limit completo aplicado al endpoint de claim y no hay auditoria formal de intentos.
 
 ## Public Profile Foundation
 
@@ -341,4 +386,4 @@ Validacion esperada para descarga QR:
 - `GET /dashboard` responde `200 OK`.
 - Prueba GUI: admin puede descargar `PID-XXXXXXXXXX.png` y QR inexistente muestra ayuda para generarlo antes.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR ni presigned URL publica. Sprint 12 no agrega nuevas tablas ni nuevas migraciones.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, UI first-scan, activacion obligatoria con `claim_code`, provisionamiento masivo con export de `claim_code`, rate limit completo para claim ni auditoria formal de intentos.

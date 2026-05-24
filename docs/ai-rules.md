@@ -9,6 +9,9 @@
 - No hardcodear secretos.
 - No loguear datos medicos o sensibles.
 - No loguear passwords ni tokens.
+- No loguear `claim_code` ni `claim_code_hash`.
+- No incluir `claim_code` en QR/NFC, URLs ni respuestas API.
+- No guardar `claim_code` en texto plano.
 - Toda futura tabla debe tener migracion.
 - Todo futuro endpoint debe usar schemas/validaciones.
 - No modificar Auth Foundation sin justificacion explicita de producto o seguridad.
@@ -28,7 +31,13 @@
 
 Auth Foundation ya existe e incluye modelo `User`, tabla `users`, hashing de passwords, JWT access token y endpoints `register`, `login` y `me`.
 
-Device Foundation ya existe e incluye modelo `Device`, tabla `devices`, relacion nullable `devices.user_id -> users.id`, generacion de `public_id` con formato `PID-XXXXXXXXXX` y endpoints protegidos basicos de devices.
+Device Foundation ya existe e incluye modelo `Device`, tabla `devices`, relacion nullable `devices.user_id -> users.id`, generacion de `public_id` con formato `PID-XXXXXXXXXX`, campos `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until`, y endpoints protegidos basicos de devices. Los campos de claim no deben exponerse por API.
+
+First Scan Activation Foundation ya existe como base tecnica de Sprint 13. ProtegID vendera identificadores fisicos con QR impreso y NFC grabado. QR/NFC apuntan a `/p/{public_id}`. `public_id` es publico. `claim_code` es privado, viene dentro del empaque fisico, no va en QR/NFC, no va en URL, no debe loguearse y no debe guardarse en texto plano.
+
+El servicio `apps/api/app/services/claim_codes.py` incluye `generate_claim_code()`, `normalize_claim_code()`, `hash_claim_code()` y `verify_claim_code()`. Genera formato `XXXX-XXXX-XXXX` con caracteres no ambiguos y `secrets`, acepta codigo con o sin guiones y reutiliza `hash_password()` / `verify_password()`.
+
+El endpoint publico `GET /api/public/devices/{public_id}/activation-status` no requiere autenticacion y responde `200` solo si el device existe y esta `pending_activation`. Para `active`, `disabled`, `lost` o inexistente responde `404` generico. No debe revelar owner, `user_id`, `claim_code_hash`, `claimed_at`, `claim_attempts`, `claim_locked_until`, datos medicos ni perfil.
 
 Public Profile Foundation ya existe e incluye modelo `EmergencyProfile`, tabla `emergency_profiles`, relacion unica `emergency_profiles.device_id -> devices.id`, endpoints privados para ver/crear/editar el perfil de un device y endpoint publico de lectura por `public_id`.
 
@@ -52,7 +61,7 @@ Campos del perfil privado actual: `display_name`, `blood_type`, `allergies`, `me
 
 La UX actual incluye `/login` con estados de carga, exito y error, deteccion de sesion temporal existente, cierre de sesion temporal y continuidad manual al dashboard. `/dashboard` esta organizado en estado de sesion, activacion de identificador, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, estado legible, descripcion operacional y seleccion. El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
 
-Device Activation UX ya existe en `/dashboard`. Usa el formulario `Activar identificador` con input `public_id`, placeholder `PID-XXXXXXXXXX`, boton `Activar identificador`, estado `Activando...` y exito `Identificador activado correctamente.`. El `public_id` puede estar impreso o asociado al QR/NFC fisico, no contiene datos medicos y la UI recomienda verificar fisicamente el identificador antes de activarlo. El cliente frontend es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`, usa `buildApiUrl`, llama `POST /api/devices/activate` con Bearer token y body `{ "public_id": "PID-XXXXXXXXXX" }`, y maneja errores controlados `400`, `401` y `404`. Al activar, el backend asocia el device pendiente al usuario, cambia `pending_activation` a `active` y setea `user_id` y `activated_at`.
+Device Activation UX ya existe en `/dashboard`. Usa el formulario `Activar identificador` con input `public_id`, placeholder `PID-XXXXXXXXXX`, boton `Activar identificador`, estado `Activando...` y exito `Identificador activado correctamente.`. El cliente frontend es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`, usa `buildApiUrl`, llama `POST /api/devices/activate` con Bearer token y body `{ "public_id": "PID-XXXXXXXXXX" }`, y maneja errores controlados `400`, `401` y `404`. Al activar, el backend asocia el device pendiente al usuario, cambia `pending_activation` a `active` y setea `user_id` y `activated_at`. Este flujo solo con `public_id` queda considerado inseguro para el flujo comercial real y debe endurecerse para requerir `public_id + claim_code`.
 
 El dashboard muestra estados de device como `pending_activation` -> `Pendiente de activación`, `active` -> `Activo`, `disabled` -> `Deshabilitado` y `lost` -> `Reportado como perdido`, con descripcion operacional por estado. No implementar cambio de estado desde frontend, reporte de perdido desde frontend ni creacion admin de devices desde frontend salvo solicitud explicita.
 
@@ -96,6 +105,7 @@ Endpoints de devices existentes:
 - `GET /api/devices`
 - `POST /api/devices/activate`
 - `POST /api/admin/devices`
+- `GET /api/public/devices/{public_id}/activation-status`
 
 Endpoints de perfiles de emergencia existentes:
 
@@ -113,7 +123,7 @@ El endpoint publico no requiere autenticacion, busca por `Device.public_id`, sol
 
 Los endpoints QR requieren Bearer token y `role=admin`. `GET /qr` devuelve metadata: `device_id`, `public_id`, `object_key`, `content_type` y `exists`. `POST /qr` genera/sube el QR. `GET /qr/download` lee `qr/devices/{public_id}.png` desde MinIO, no genera QR automaticamente, responde `404` si no existe y, si existe, responde PNG con `Content-Type: image/png` y `Content-Disposition: attachment; filename="{public_id}.png"`. No entrega presigned URL ni expone bucket o credenciales.
 
-No implementar registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
+No implementar registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, UI first-scan, activacion obligatoria con `claim_code`, provisionamiento masivo con export de `claim_code`, rate limit completo para claim, auditoria formal de intentos ni MFA salvo solicitud explicita.
 
 No crear nuevas tablas ni migraciones salvo solicitud explicita.
 
