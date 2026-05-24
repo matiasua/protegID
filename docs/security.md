@@ -109,6 +109,7 @@ Reglas de seguridad y privacidad:
 - Los endpoints QR solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
 - No se devuelve el archivo PNG todavia.
 - No se entrega presigned URL todavia.
+- El backend sigue siendo la fuente de autorizacion para gestion QR.
 
 ## Public Profile Frontend
 
@@ -174,14 +175,30 @@ Flujo actual:
 - Los dispositivos muestran `public_id`, status visual y seleccion; no muestran IDs internos visualmente.
 - El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
 
+## QR Management Frontend
+
+Sprint 10 expone gestion QR administrativa desde `/dashboard` sin cambiar la autorizacion backend.
+
+- El dashboard consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
+- El dashboard permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr`.
+- Ambos endpoints requieren Bearer token y `role=admin`.
+- Si el usuario no es admin o QR responde `403`, el frontend muestra `La gestión de QR requiere rol admin.`.
+- El dashboard no debe romper si QR responde `403`; devices y editor de perfil siguen disponibles.
+- El QR apunta a `/p/{public_id}`.
+- El QR solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
+- La visualizacion depende de que el perfil este marcado como publico.
+- `object_key` se muestra solo como detalle tecnico.
+- No se deben loguear tokens ni datos medicos.
+- No hay descarga PNG desde frontend, presigned URLs, preview de imagen QR, apertura de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
+
 Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
 
 `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
 ## Estado actual
 
-El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, descarga PNG desde frontend, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 9 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.
+Sprint 10 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.

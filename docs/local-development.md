@@ -257,6 +257,8 @@ docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run b
 - `GET /p/PID-G2NYZP87KA` debe responder `200 OK`.
 - `GET /p/PID-AAAAAAAAAA` debe responder `404 Not Found`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
+- Usuario admin: ve estado QR y puede generar/regenerar QR desde `/dashboard`.
+- Usuario no admin: ve `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
 
 ## QR Foundation
 
@@ -276,4 +278,17 @@ Endpoints admin:
 
 La metadata incluye `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`. No se devuelve el archivo PNG ni se entrega presigned URL.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 9 no agrega nuevas tablas ni nuevas migraciones.
+## QR Management Frontend
+
+Sprint 10 agrega gestion QR desde `/dashboard`.
+
+- El dashboard consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
+- El dashboard muestra `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`.
+- El dashboard permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr` para usuarios admin.
+- Si no hay permisos, muestra `La gestión de QR requiere rol admin.` y no rompe la gestion de devices/perfil.
+- El QR apunta a `/p/{public_id}` y solo contiene la URL publica del perfil.
+- La visualizacion depende de que el perfil este marcado como publico.
+- `object_key` se muestra como detalle tecnico.
+- No hay descarga PNG desde frontend, presigned URLs, preview de imagen QR, NFC funcional, tracking, geolocalizacion ni notificaciones.
+
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, descarga PNG desde frontend, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica. Sprint 10 no agrega nuevas tablas ni nuevas migraciones.

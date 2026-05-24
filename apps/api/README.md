@@ -113,7 +113,7 @@ El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost
 
 ## Integracion con frontend privado
 
-El frontend privado existe en `/login` y `/dashboard`; Sprint 9 mejora UX y navegacion sin cambiar endpoints ni auth backend.
+El frontend privado existe en `/login` y `/dashboard`; Sprint 10 agrega gestion QR desde el dashboard sin cambiar endpoints ni auth backend.
 
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
@@ -128,6 +128,13 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 9 mejora UX y nave
 - Permite seleccionar un dispositivo.
 - Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- Consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
+- Permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
+- Muestra estados QR `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`.
+- Si el usuario no es admin o QR responde `403`, muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
+- El QR apunta a `/p/{public_id}`, solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
+- `object_key` se muestra como detalle tecnico.
+- No hay descarga PNG desde frontend, presigned URLs ni preview de imagen QR.
 - `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
 - Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
@@ -226,6 +233,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, descarga PNG desde frontend, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
 
-Sprint 9 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.
+Sprint 10 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.

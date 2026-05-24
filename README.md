@@ -117,6 +117,8 @@ La primera version del login frontend y sesion temporal existe.
 - `/dashboard` lee automaticamente el token con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
+- Por cada dispositivo, consulta estado QR con `GET /api/admin/devices/{device_id}/qr`.
+- Permite generar o regenerar QR desde la GUI con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
 - Permite seleccionar un dispositivo y cargar su perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
@@ -131,7 +133,23 @@ Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `medical
 
 `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-UX actual de `/dashboard`: validacion automatica si existe token temporal, secciones de estado de sesion, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, status visual, seleccion y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
+UX actual de `/dashboard`: validacion automatica si existe token temporal, secciones de estado de sesion, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, status visual, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
+
+## QR Management Frontend
+
+Sprint 10 agrega gestion QR desde `/dashboard` sin descargar ni previsualizar imagenes.
+
+- El dashboard consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
+- El dashboard permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr`.
+- Estados visibles por dispositivo: `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`.
+- Los endpoints QR requieren Bearer token y `role=admin`.
+- Si el usuario no es admin o QR responde `403`, el frontend muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices y editor de perfil.
+- El backend sigue siendo la fuente de autorizacion.
+- El QR apunta a la URL publica `/p/{public_id}`.
+- El QR solo contiene la URL publica del perfil; no incluye datos medicos embebidos.
+- La visualizacion depende de que el perfil este marcado como publico con `is_public=true`.
+- `object_key` se muestra como detalle tecnico.
+- No hay descarga PNG desde frontend, presigned URLs, preview de imagen QR, apertura de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
 Validacion esperada:
 
@@ -142,9 +160,11 @@ Validacion esperada:
 - `GET /p/PID-G2NYZP87KA` responde `200 OK`.
 - `GET /p/PID-AAAAAAAAAA` responde `404 Not Found`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
+- Usuario admin: ve estado QR y puede generar/regenerar QR.
+- Usuario no admin: ve `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend y UX Hardening & Navigation de Sprint 9.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9 y QR Management Frontend de Sprint 10.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones. Para produccion se evaluara una estrategia de sesion mas robusta.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, descarga PNG desde frontend, presigned URLs, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones. Para produccion se evaluara una estrategia de sesion mas robusta.
