@@ -52,7 +52,7 @@ Campos de first-scan activation en `Device`:
 - `claim_attempts`
 - `claim_locked_until`
 
-Estos campos preparan activacion segura por `claim_code` y no se exponen por API.
+Estos campos soportan activacion segura por `claim_code`. `claim_code`, `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until` no se exponen por API.
 
 Estados de device:
 
@@ -64,10 +64,10 @@ Estados de device:
 Endpoints protegidos:
 
 - `GET /api/devices`: requiere Bearer token y solo lista devices del usuario autenticado.
-- `POST /api/devices/activate`: requiere Bearer token y body `{ "public_id": "PID-XXXXXXXXXX" }`; activa/asocia un device `pending_activation` por `public_id`, cambia `status` a `active` y setea `user_id` y `activated_at`.
+- `POST /api/devices/activate`: requiere Bearer token y body `{ "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }`; valida `claim_code` contra `claim_code_hash`, activa/asocia un device `pending_activation` sin `user_id`, cambia `status` a `active`, setea `user_id`, `activated_at` y `claimed_at`, resetea `claim_attempts` y limpia `claim_locked_until`.
 - `POST /api/admin/devices`: requiere Bearer token y `role=admin`; crea un device `pending_activation`.
 
-`POST /api/devices/activate` solo con `public_id` queda considerado inseguro para el flujo comercial real y debe endurecerse para requerir `public_id + claim_code`.
+`POST /api/devices/activate` ya no activa solo con `public_id`. El `claim_code` viene dentro del empaque fisico, no va en QR/NFC, no se guarda en texto plano y se verifica contra `claim_code_hash`.
 
 ## First Scan Activation Foundation
 
@@ -78,6 +78,8 @@ Flujo de negocio objetivo:
 - `public_id` es publico.
 - `claim_code` es privado y viene dentro del empaque fisico.
 - `claim_code` no va en QR/NFC, no va en URL, no debe loguearse y no debe guardarse en texto plano.
+- `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until` no se exponen por API.
+- `claim_code` y `claim_code_hash` no deben loguearse.
 
 Servicio `app.services.claim_codes`:
 
@@ -103,9 +105,60 @@ Respuesta `200`:
 
 Para `active`, `disabled`, `lost` o inexistente responde `404` generico. No revela owner, `user_id`, `claim_code_hash`, `claimed_at`, `claim_attempts`, `claim_locked_until`, datos medicos ni perfil.
 
+Endpoint privado de activacion:
+
+```http
+POST /api/devices/activate
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }
+```
+
+Reglas:
+
+- Requiere Bearer token.
+- Requiere `public_id` valido y `claim_code` valido.
+- Solo activa un device con `status == "pending_activation"`.
+- El device no debe tener `user_id` asignado.
+- Debe existir `claim_code_hash`.
+- Si todo es valido, `status` pasa a `active`, `user_id` se asigna al usuario autenticado, `activated_at` y `claimed_at` se setean, `claim_attempts` vuelve a `0` y `claim_locked_until` queda `null`.
+
+Errores esperados:
+
+- Sin token -> `401`.
+- Body sin `claim_code` -> `422`.
+- `public_id` invalido por pattern -> `422`.
+- `public_id` inexistente -> `404 Identifier not available`.
+- Device no disponible, ya activo o asociado -> `404 Identifier not available`.
+- `pending_activation` sin `claim_code_hash` -> `400 Identifier cannot be activated`.
+- `claim_code` incorrecto -> `400 Invalid activation data`.
+- Bloqueo por intentos -> `429 Too many activation attempts. Try again later.`.
+
+Proteccion contra fuerza bruta:
+
+- `MAX_CLAIM_ATTEMPTS = 5`.
+- `CLAIM_LOCK_MINUTES = 15`.
+- Cada `claim_code` incorrecto incrementa `claim_attempts`.
+- Al quinto intento incorrecto se setea `claim_locked_until`.
+- Durante bloqueo responde `429`.
+- Activacion correcta limpia `claim_attempts` y `claim_locked_until`.
+
 Validacion esperada:
 
-- `python3 -m py_compile apps/api/app/models/device.py apps/api/app/services/claim_codes.py apps/api/app/api/public_devices.py apps/api/app/main.py apps/api/app/schemas/device.py`
+- `python3 -m py_compile apps/api/app/api/devices.py apps/api/app/schemas/device.py`
+- `git diff --check`
+- `POST /api/devices/activate` sin token -> `401`.
+- `POST /api/devices/activate` sin `claim_code` -> `422`.
+- `POST /api/devices/activate` con `public_id` invalido -> `422`.
+- `POST /api/devices/activate` con `public_id` inexistente -> `404`.
+- `POST /api/devices/activate` con device pendiente sin `claim_code_hash` -> `400`.
+- `POST /api/devices/activate` con claim incorrecto -> `400` e incrementa `claim_attempts`.
+- Quinto intento incorrecto -> `claim_locked_until` seteado.
+- Intento durante bloqueo -> `429`.
+- Claim correcto en device no bloqueado -> `200` y device `active` con `user_id`, `activated_at` y `claimed_at`.
+- Reactivar device ya activo -> `404`.
+- Respuestas no exponen `claim_code`, `claim_code_hash`, `claimed_at`, `claim_attempts` ni `claim_locked_until`.
 - `docker compose exec -T protegid-api alembic upgrade head`
 - `GET /api/public/devices/{public_id}/activation-status` con `pending_activation` -> `200`.
 - `GET /api/public/devices/{public_id}/activation-status` con `active`, `disabled`, `lost` o inexistente -> `404`.
@@ -170,7 +223,7 @@ El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost
 
 ## Integracion con frontend privado
 
-El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activacion de identificadores desde el dashboard sin cambiar auth backend.
+El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activacion de identificadores desde el dashboard y Sprint 14 cambia el backend para exigir `public_id + claim_code`.
 
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
@@ -194,8 +247,9 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activaci
 - Si descarga correctamente muestra `QR descargado correctamente.`.
 - Si el QR no existe muestra `Genera el QR antes de descargarlo.`.
 - Si el usuario no es admin o QR responde `403`, muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
-- El cliente frontend de activacion es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`, usa `buildApiUrl` y maneja `400`, `401` y `404` con errores controlados.
+- El cliente frontend actual de activacion es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`, usa `buildApiUrl` y todavia debe actualizarse para enviar `claim_code`.
 - `Activar identificador` usa input `public_id`, placeholder `PID-XXXXXXXXXX`, boton `Activar identificador`, estado `Activando...` y exito `Identificador activado correctamente.`.
+- El dashboard actual puede quedar temporalmente incompatible con la nueva activacion hasta el sprint frontend.
 - El `public_id` puede estar impreso o asociado al QR/NFC fisico, no contiene datos medicos y debe verificarse fisicamente antes de activarlo.
 - La lista de dispositivos se refresca o actualiza al activar.
 - Estados visibles: `pending_activation` -> `Pendiente de activación`, `active` -> `Activo`, `disabled` -> `Deshabilitado`, `lost` -> `Reportado como perdido`.
@@ -253,7 +307,7 @@ Activate device:
 curl -X POST http://localhost:8000/api/devices/activate \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
-  -d '{"public_id":"PID-ABCDEFGH23"}'
+  -d '{"public_id":"PID-ABCDEFGH23","claim_code":"XXXX-XXXX-XXXX"}'
 ```
 
 Create pending device as admin:
@@ -318,6 +372,6 @@ curl http://localhost:8000/api/public/devices/PID-ABCDEFGH23/activation-status
 
 ## Limites actuales
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, UI first-scan en `/p/{public_id}`, activacion obligatoria con `claim_code`, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code`, rate limit completo para claim ni auditoria formal de intentos.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, UI first-scan en `/p/{public_id}`, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos.
 
-Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado, pero no modifica todavia `POST /api/devices/activate` ni frontend.
+Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos, pero no modifica todavia el frontend.

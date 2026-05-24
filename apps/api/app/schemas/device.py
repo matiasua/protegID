@@ -18,6 +18,7 @@ class DeviceCreate(BaseModel):
 
 class DeviceActivate(BaseModel):
     public_id: str = Field(pattern=r"^PID-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$")
+    claim_code: str
 
 
 class DeviceActivationStatusRead(BaseModel):
