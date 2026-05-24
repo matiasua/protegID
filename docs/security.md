@@ -97,18 +97,23 @@ Sprint 5 implementa la base de QR:
 - Generacion de QR PNG en memoria.
 - Persistencia del QR en MinIO/S3 compatible.
 - Object key estable: `qr/devices/{public_id}.png`.
-- Endpoints admin `GET /api/admin/devices/{device_id}/qr` y `POST /api/admin/devices/{device_id}/qr`.
+- Endpoints admin `GET /api/admin/devices/{device_id}/qr`, `POST /api/admin/devices/{device_id}/qr` y `GET /api/admin/devices/{device_id}/qr/download`.
 
 Reglas de seguridad y privacidad:
 
 - El QR no contiene datos medicos.
 - El QR contiene solo la URL publica `{PUBLIC_APP_URL}{PUBLIC_PROFILE_PATH}/{public_id}`.
 - Ejemplo local: `http://localhost:8080/p/PID-XXXXXXXXXX`.
-- Ambos endpoints QR requieren Bearer token.
-- Ambos endpoints QR requieren `role=admin`.
-- Los endpoints QR solo devuelven metadata: `device_id`, `public_id`, `object_key`, `content_type` y, para `GET`, `exists`.
-- No se devuelve el archivo PNG todavia.
-- No se entrega presigned URL todavia.
+- Los endpoints QR requieren Bearer token.
+- Los endpoints QR requieren `role=admin`; usuario no admin recibe `403`.
+- Sin token, los endpoints QR responden `401`.
+- `GET /api/admin/devices/{device_id}/qr` devuelve metadata: `device_id`, `public_id`, `object_key`, `content_type` y `exists`.
+- `POST /api/admin/devices/{device_id}/qr` genera/sube el QR.
+- `GET /api/admin/devices/{device_id}/qr/download` busca el device por `device_id`, lee `qr/devices/{public_id}.png` desde MinIO y no genera QR automaticamente.
+- Si el QR no existe, la descarga responde `404`.
+- Si el QR existe, la descarga responde `Content-Type: image/png` y `Content-Disposition: attachment; filename="{public_id}.png"`.
+- No se entrega presigned URL.
+- No se expone bucket, credenciales ni URL publica de MinIO.
 - El backend sigue siendo la fuente de autorizacion para gestion QR.
 
 ## Public Profile Frontend
@@ -177,19 +182,25 @@ Flujo actual:
 
 ## QR Management Frontend
 
-Sprint 10 expone gestion QR administrativa desde `/dashboard` sin cambiar la autorizacion backend.
+Sprint 11 expone gestion QR administrativa desde `/dashboard` con descarga controlada del PNG sin cambiar la autorizacion backend.
 
 - El dashboard consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
 - El dashboard permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr`.
-- Ambos endpoints requieren Bearer token y `role=admin`.
+- El dashboard permite descargar QR con `GET /api/admin/devices/{device_id}/qr/download` usando `downloadDeviceQr(deviceId, accessToken): Promise<Blob>`.
+- Los endpoints QR requieren Bearer token y `role=admin`.
 - Si el usuario no es admin o QR responde `403`, el frontend muestra `La gestión de QR requiere rol admin.`.
+- Si no hay token o la sesion expiro, la descarga muestra `Sesión expirada o no autenticada.`.
+- Si el QR no existe, muestra `QR no encontrado. Genera el QR antes de descargarlo.` o la ayuda `Genera el QR antes de descargarlo.`.
+- Si descarga correctamente, muestra `QR descargado correctamente.`.
 - El dashboard no debe romper si QR responde `403`; devices y editor de perfil siguen disponibles.
 - El QR apunta a `/p/{public_id}`.
 - El QR solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
 - La visualizacion depende de que el perfil este marcado como publico.
 - `object_key` se muestra solo como detalle tecnico.
+- La descarga obtiene el PNG desde el backend autenticado.
+- El navegador crea un objeto temporal con `URL.createObjectURL` y lo revoca con `URL.revokeObjectURL`.
 - No se deben loguear tokens ni datos medicos.
-- No hay descarga PNG desde frontend, presigned URLs, preview de imagen QR, apertura de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
+- No hay presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
 Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
 
@@ -197,8 +208,8 @@ Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditio
 
 ## Estado actual
 
-El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, descarga PNG desde frontend, preview de imagen QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 10 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.
+Sprint 11 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
