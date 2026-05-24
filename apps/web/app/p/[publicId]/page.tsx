@@ -5,6 +5,8 @@ import { getPublicDeviceActivationStatus } from "@/lib/public-devices";
 import { getPublicProfile } from "@/lib/public-profile";
 import type { PublicProfile } from "@/types/public-profile";
 
+import { ActivationForm } from "./activation-form";
+
 type PublicProfilePageProps = {
   params: Promise<{
     publicId: string;
@@ -86,20 +88,7 @@ function ActivationOnboarding({ publicId }: { publicId: string }) {
               <p className="mt-1 break-all font-mono text-sm text-slate-700">{publicId}</p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                className="inline-flex items-center justify-center rounded-full bg-red-700 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2"
-                href="/login"
-              >
-                Iniciar sesión
-              </Link>
-              <span
-                aria-disabled="true"
-                className="inline-flex cursor-not-allowed items-center justify-center rounded-full border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-bold text-slate-500"
-              >
-                Crear cuenta próximamente
-              </span>
-            </div>
+            <ActivationForm publicId={publicId} />
 
             <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
               <p className="font-semibold">El código de activación no está en el QR/NFC. Está dentro del empaque físico.</p>
