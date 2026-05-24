@@ -8,10 +8,12 @@ import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
+import { getDeviceQrStatus } from "@/lib/qr-codes";
 import { clearSessionToken, getSessionToken } from "@/lib/session";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
 import type { EmergencyProfile, EmergencyProfileInput } from "@/types/emergency-profile";
+import type { DeviceQrStatus } from "@/types/qr-code";
 
 type ProfileFormState = {
   display_name: string;
@@ -37,6 +39,12 @@ type ProfileFieldConfig = {
 type ValidateSessionOptions = {
   clearStoredTokenOnFailure?: boolean;
   updateTokenInput?: boolean;
+};
+
+type DeviceQrStatusState = {
+  isLoading: boolean;
+  status: DeviceQrStatus | null;
+  hasError: boolean;
 };
 
 type ProfileFieldGroup = {
@@ -103,6 +111,47 @@ function getProfileErrorMessage(error: unknown, fallbackMessage: string): string
   }
 
   return fallbackMessage;
+}
+
+function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
+  return Object.fromEntries(
+    devices.map<[string, DeviceQrStatusState]>((device) => [
+      device.id,
+      {
+        isLoading: true,
+        status: null,
+        hasError: false,
+      },
+    ]),
+  );
+}
+
+function getQrStatusLabel(qrStatusState: DeviceQrStatusState | undefined): string {
+  if (!qrStatusState || qrStatusState.isLoading) {
+    return "Consultando QR...";
+  }
+
+  if (qrStatusState.hasError) {
+    return "QR no disponible";
+  }
+
+  return qrStatusState.status?.exists ? "QR generado" : "QR pendiente";
+}
+
+function getQrStatusClass(qrStatusState: DeviceQrStatusState | undefined): string {
+  if (!qrStatusState || qrStatusState.isLoading) {
+    return "border-sky-100 bg-sky-50 text-sky-800";
+  }
+
+  if (qrStatusState.hasError) {
+    return "border-slate-200 bg-white text-slate-600";
+  }
+
+  if (qrStatusState.status?.exists) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-900";
 }
 
 function createEmptyProfileForm(): ProfileFormState {
@@ -190,11 +239,13 @@ export default function DashboardPage() {
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [qrStatusByDeviceId, setQrStatusByDeviceId] = useState<Record<string, DeviceQrStatusState>>({});
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState>(() => createEmptyProfileForm());
   const [hasExistingProfile, setHasExistingProfile] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
+  const [qrAdminMessage, setQrAdminMessage] = useState<string | null>(null);
   const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(null);
   const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
   const [hasCheckedStoredSession, setHasCheckedStoredSession] = useState(false);
@@ -230,6 +281,8 @@ export default function DashboardPage() {
   function resetAuthenticatedState() {
     setCurrentUser(null);
     setDevices([]);
+    setQrStatusByDeviceId({});
+    setQrAdminMessage(null);
     resetProfileEditor();
   }
 
@@ -243,6 +296,7 @@ export default function DashboardPage() {
   async function validateAccessToken(token: string, options: ValidateSessionOptions = {}) {
     setErrorMessage(null);
     setDeviceErrorMessage(null);
+    setQrAdminMessage(null);
     resetAuthenticatedState();
 
     if (options.updateTokenInput) {
@@ -276,11 +330,50 @@ export default function DashboardPage() {
     try {
       const userDevices = await getMyDevices(token);
       setDevices(userDevices);
+      void loadDeviceQrStatuses(userDevices, token);
     } catch (error) {
       setDeviceErrorMessage(getDevicesErrorMessage(error));
     } finally {
       setIsLoadingDevices(false);
     }
+  }
+
+  async function loadDeviceQrStatuses(userDevices: Device[], token: string) {
+    if (userDevices.length === 0) {
+      setQrStatusByDeviceId({});
+      return;
+    }
+
+    setQrStatusByDeviceId(createInitialQrStatusState(userDevices));
+
+    await Promise.all(
+      userDevices.map(async (device) => {
+        try {
+          const qrStatus = await getDeviceQrStatus(device.id, token);
+          setQrStatusByDeviceId((currentStatuses) => ({
+            ...currentStatuses,
+            [device.id]: {
+              isLoading: false,
+              status: qrStatus,
+              hasError: false,
+            },
+          }));
+        } catch (error) {
+          if (error instanceof ApiRequestError && error.status === 403) {
+            setQrAdminMessage("La gestión de QR requiere rol admin.");
+          }
+
+          setQrStatusByDeviceId((currentStatuses) => ({
+            ...currentStatuses,
+            [device.id]: {
+              isLoading: false,
+              status: null,
+              hasError: true,
+            },
+          }));
+        }
+      }),
+    );
   }
 
   async function handleValidateSession(event: FormEvent<HTMLFormElement>) {
@@ -293,6 +386,7 @@ export default function DashboardPage() {
     setAccessToken("");
     setErrorMessage(null);
     setDeviceErrorMessage(null);
+    setQrAdminMessage(null);
     resetAuthenticatedState();
   }
 
@@ -506,6 +600,12 @@ export default function DashboardPage() {
               </p>
             ) : null}
 
+            {qrAdminMessage ? (
+              <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {qrAdminMessage}
+              </p>
+            ) : null}
+
             {!isLoadingDevices && !deviceErrorMessage && devices.length === 0 ? (
               <p className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                 No tienes dispositivos asociados.
@@ -516,6 +616,7 @@ export default function DashboardPage() {
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 {devices.map((device) => {
                   const isSelectedDevice = selectedDevice?.id === device.id;
+                  const qrStatusState = qrStatusByDeviceId[device.id];
 
                   return (
                   <article
@@ -554,6 +655,21 @@ export default function DashboardPage() {
                         <dd className="mt-1 text-slate-950">{formatActivatedAt(device.activated_at)}</dd>
                       </div>
                     </dl>
+
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm font-medium text-slate-500">Estado QR</p>
+                        <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getQrStatusClass(qrStatusState)}`}>
+                          {getQrStatusLabel(qrStatusState)}
+                        </span>
+                      </div>
+
+                      {qrStatusState?.status?.object_key ? (
+                        <p className="mt-3 break-all font-mono text-xs text-slate-500">
+                          {qrStatusState.status.object_key}
+                        </p>
+                      ) : null}
+                    </div>
 
                     <div className="mt-5">
                       <Button
