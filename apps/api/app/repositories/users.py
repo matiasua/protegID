@@ -2,14 +2,19 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import User
 
 
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 def get_user_by_email(session: Session, email: str) -> User | None:
-    statement = select(User).where(User.email == email)
+    normalized_email = _normalize_email(email)
+    statement = select(User).where(func.lower(User.email) == normalized_email)
     return session.scalar(statement)
 
 
