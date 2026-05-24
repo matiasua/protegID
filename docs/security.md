@@ -126,11 +126,13 @@ Reglas de seguridad y privacidad:
 - No expone `deleted_at`.
 - Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
 - El 404 no debe revelar si el `public_id` existe o no.
+- El not-found publico mantiene `404` real, permite volver al inicio y no revela si el `public_id` existe.
+- `/p/{public_id}` solo agrega un enlace discreto `ProtegID` hacia `/`; no expone datos internos.
 - Los datos medicos no deben loguearse.
 
 ## Private Profile Management Frontend
 
-Sprint 8 agrega Auth Frontend Foundation inicial con `/login` y sesion temporal para `/dashboard`.
+Sprint 9 mantiene la sesion temporal de `/login` y `/dashboard`, y mejora UX/navegacion sin cambiar la estrategia de auth.
 
 Estado de seguridad actual:
 
@@ -139,10 +141,14 @@ Estado de seguridad actual:
 - Si el login es correcto, recibe `access_token` y `token_type`.
 - `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
 - `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
+- `/login` detecta si ya existe una sesion temporal en `sessionStorage` y muestra `Ya existe una sesión temporal activa.`.
+- `/login` permite ir a `/dashboard` o cerrar la sesion temporal con `clearSessionToken()` sin validar automaticamente contra backend.
+- Despues de login exitoso, `/login` muestra `Continuar al dashboard` y no redirige automaticamente.
 - `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
-- `/dashboard` mantiene fallback tecnico para pegar token manualmente.
+- `/dashboard` mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
 - `/dashboard` tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
+- `/login` y `/dashboard` tienen enlace `Volver al inicio`.
 - Es una sesion temporal para MVP.
 - Se usa `sessionStorage`, no `localStorage`.
 - No se usan cookies.
@@ -164,6 +170,9 @@ Flujo actual:
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
 - Si el token expiro o es invalido, muestra error controlado y permite volver a login.
+- La organizacion visual de `/dashboard` separa estado de sesion, dispositivos, editor de perfil y fallback tecnico.
+- Los dispositivos muestran `public_id`, status visual y seleccion; no muestran IDs internos visualmente.
+- El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
 
 Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
 
@@ -171,8 +180,8 @@ Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditio
 
 ## Estado actual
 
-El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 8 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 9 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.

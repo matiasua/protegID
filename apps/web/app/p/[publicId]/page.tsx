@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getPublicProfile } from "@/lib/public-profile";
@@ -36,7 +37,10 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
     <main className="min-h-screen bg-slate-100 px-4 py-6 text-slate-950 sm:px-6 md:py-10">
       <section className="mx-auto max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-8">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-red-700">Ficha de emergencia</p>
+          <Link className="text-xs font-bold uppercase tracking-[0.22em] text-red-700 underline-offset-4 hover:underline" href="/">
+            ProtegID
+          </Link>
+          <p className="mt-2 text-xs font-bold uppercase tracking-[0.22em] text-red-700">Ficha de emergencia</p>
           <p className="mt-1 text-sm text-red-950">Informacion publica para primeros respondientes.</p>
         </div>
 

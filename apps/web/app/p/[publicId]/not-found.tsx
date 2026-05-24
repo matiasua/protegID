@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function PublicProfileNotFound() {
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-6 text-slate-950 sm:px-6 md:py-10">
@@ -13,8 +15,11 @@ export default function PublicProfileNotFound() {
             No se puede mostrar esta ficha de emergencia
           </h1>
           <p className="mt-4 text-base leading-7 text-slate-600">
-            Este identificador no existe, esta desactivado o no tiene perfil publico habilitado.
+            No hay una ficha pública disponible para este identificador.
           </p>
+          <Link className="mt-6 inline-flex text-sm font-medium text-sky-700 underline-offset-4 hover:underline" href="/">
+            Volver al inicio
+          </Link>
         </div>
       </section>
     </main>

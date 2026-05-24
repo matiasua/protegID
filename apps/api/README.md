@@ -108,16 +108,20 @@ El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost
 - No expone IDs internos, `device_id`, timestamps ni `deleted_at`.
 - Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
 - El 404 no revela si el `public_id` existe o no.
+- Incluye enlace discreto `ProtegID` hacia `/`.
+- El not-found publico mantiene `404` real, permite volver al inicio y no revela si el `public_id` existe.
 
 ## Integracion con frontend privado
 
-El frontend privado inicial existe en `/login` y `/dashboard`.
+El frontend privado existe en `/login` y `/dashboard`; Sprint 9 mejora UX y navegacion sin cambiar endpoints ni auth backend.
 
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
 - Si el login es correcto, recibe `access_token` y `token_type`.
 - `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
 - `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
+- `/login` detecta sesion temporal existente, muestra `Ya existe una sesión temporal activa.`, permite ir a `/dashboard` y permite cerrar sesion temporal.
+- Despues de login exitoso, `/login` muestra `Continuar al dashboard` y no redirige automaticamente.
 - `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Carga dispositivos con `GET /api/devices`.
@@ -126,8 +130,12 @@ El frontend privado inicial existe en `/login` y `/dashboard`.
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
 - `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
-- Mantiene fallback tecnico para pegar token manualmente.
+- Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
 - Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
+- `/login` y `/dashboard` tienen enlace `Volver al inicio`.
+- `/dashboard` organiza estado de sesion, dispositivos, editor de perfil y fallback tecnico.
+- Los dispositivos muestran `public_id`, status visual y seleccion.
+- El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
 - La sesion es temporal para MVP: usa `sessionStorage`, no `localStorage`, no cookies, no refresh token y no middleware de proteccion.
 
 ## Ejemplos curl
@@ -218,6 +226,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion de QR desde frontend, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, gestion frontend de QR, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
 
-Sprint 8 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 9 no cambia backend, no agrega nuevas tablas ni nuevas migraciones.
