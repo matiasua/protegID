@@ -60,10 +60,13 @@ Controles de seguridad actuales:
 
 - `GET /api/devices` requiere Bearer token.
 - `GET /api/devices` solo lista devices del usuario autenticado.
-- `POST /api/devices/activate` requiere Bearer token.
+- `POST /api/devices/activate` requiere Bearer token y body `{ "public_id": "PID-XXXXXXXXXX" }`.
+- `POST /api/devices/activate` activa/asocia un device `pending_activation`, cambia `status` a `active` y setea `user_id` y `activated_at`.
 - `POST /api/admin/devices` requiere `role=admin`.
 - `public_id` no es secuencial.
 - `public_id` no usa el UUID interno completo como identificador publico visible.
+- `public_id` no contiene datos medicos.
+- El usuario debe verificar fisicamente el identificador antes de activarlo.
 
 ## Public Profile Foundation
 
@@ -172,13 +175,31 @@ Flujo actual:
 
 - Valida sesion contra `GET /api/auth/me`.
 - Carga dispositivos con `GET /api/devices`.
+- Permite activar/asociar un identificador fisico desde `Activar identificador` con `POST /api/devices/activate`.
 - Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
 - Si el token expiro o es invalido, muestra error controlado y permite volver a login.
-- La organizacion visual de `/dashboard` separa estado de sesion, dispositivos, editor de perfil y fallback tecnico.
-- Los dispositivos muestran `public_id`, status visual y seleccion; no muestran IDs internos visualmente.
+- La organizacion visual de `/dashboard` separa estado de sesion, activacion de identificador, dispositivos, editor de perfil y fallback tecnico.
+- Los dispositivos muestran `public_id`, estado legible, descripcion operacional y seleccion; no muestran IDs internos visualmente.
 - El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
+
+## Device Activation UX
+
+Sprint 12 expone activacion de identificadores desde `/dashboard` sin cambiar la autorizacion backend.
+
+- La seccion `Activar identificador` usa `public_id` con formato `PID-XXXXXXXXXX`.
+- El `public_id` puede estar impreso o asociado al QR/NFC fisico.
+- El `public_id` no contiene datos medicos.
+- La UI recomienda verificar fisicamente el identificador antes de activarlo.
+- El cliente `activateDevice(publicId, accessToken): Promise<Device>` esta en `apps/web/lib/devices.ts` y usa `buildApiUrl`.
+- Maneja errores controlados: `400` identificador no disponible para activacion, `401` sesion expirada o no autenticada, `404` identificador no encontrado.
+- El dashboard muestra `Activando...` durante la solicitud y `Identificador activado correctamente.` al terminar.
+- El dashboard refresca o actualiza la lista de dispositivos y muestra descripcion operacional por estado.
+- Estados visibles: `pending_activation` -> `Pendiente de activación`, `active` -> `Activo`, `disabled` -> `Deshabilitado`, `lost` -> `Reportado como perdido`.
+- No se deben loguear tokens ni datos medicos.
+- No hay scanner QR, lectura NFC, camara, geolocalizacion, tracking, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend ni creacion admin de devices desde frontend.
+- El backend sigue siendo la fuente de autorizacion.
 
 ## QR Management Frontend
 
@@ -208,8 +229,8 @@ Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditio
 
 ## Estado actual
 
-El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 11 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 12 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.

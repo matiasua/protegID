@@ -117,6 +117,7 @@ La primera version del login frontend y sesion temporal existe.
 - `/dashboard` lee automaticamente el token con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
+- Permite activar/asociar un identificador fisico desde la seccion `Activar identificador` usando `public_id`.
 - Por cada dispositivo, consulta estado QR con `GET /api/admin/devices/{device_id}/qr`.
 - Permite generar o regenerar QR desde la GUI con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
 - Permite seleccionar un dispositivo y cargar su perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
@@ -133,7 +134,43 @@ Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `medical
 
 `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-UX actual de `/dashboard`: validacion automatica si existe token temporal, secciones de estado de sesion, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, status visual, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
+UX actual de `/dashboard`: validacion automatica si existe token temporal, secciones de estado de sesion, activacion de identificador, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, estado legible, descripcion operacional, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
+
+## Device Activation UX
+
+Sprint 12 agrega activacion de identificadores desde `/dashboard` sin cambiar backend ni el flujo publico.
+
+- La seccion `Activar identificador` permite vincular un identificador fisico a la cuenta autenticada.
+- El formulario usa un input `public_id`, placeholder `PID-XXXXXXXXXX` y boton `Activar identificador`.
+- Durante la solicitud muestra `Activando...`.
+- Si la activacion es correcta muestra `Identificador activado correctamente.`.
+- Despues de activar, el dashboard actualiza/refresca la lista de dispositivos y mantiene perfil, QR, generacion, descarga y edicion.
+- El `public_id` puede estar impreso o asociado al QR/NFC fisico.
+- El `public_id` no contiene datos medicos.
+- Se recomienda verificar fisicamente el identificador antes de activarlo.
+- El cliente frontend es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts` y usa `buildApiUrl`.
+- Errores controlados: `400` identificador no disponible para activacion, `401` sesion expirada o no autenticada, `404` identificador no encontrado.
+
+Endpoint usado:
+
+```http
+POST /api/devices/activate
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "public_id": "PID-XXXXXXXXXX" }
+```
+
+El endpoint activa/asocia un device `pending_activation` al usuario autenticado, cambia `status` a `active` y setea `user_id` y `activated_at` segun la logica backend existente.
+
+Estados visibles de device en dashboard:
+
+- `pending_activation` -> `Pendiente de activación`.
+- `active` -> `Activo`.
+- `disabled` -> `Deshabilitado`.
+- `lost` -> `Reportado como perdido`.
+
+El dashboard muestra una descripcion operacional por estado y deshabilita acciones sensibles para estados no activos cuando aplica.
 
 ## QR Management Frontend
 
@@ -170,6 +207,7 @@ Validacion esperada:
 - `GET /api/admin/devices/{device_id}/qr/download` con usuario no admin responde `403`.
 - `GET /api/admin/devices/{device_id}/qr/download` con admin y QR existente responde `200` con `Content-Type: image/png`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
+- Prueba GUI de activacion: iniciar sesion, ir a `/dashboard`, ingresar un `public_id` pendiente, activar identificador, ver `Identificador activado correctamente.` y confirmar que aparece en `Mis dispositivos` como `Activo`.
 - Usuario admin: ve estado QR y puede generar/regenerar QR.
 - Usuario admin: puede descargar `PID-XXXXXXXXXX.png` desde Gestion QR.
 - QR inexistente: muestra ayuda para generarlo antes de descargarlo.
@@ -177,6 +215,6 @@ Validacion esperada:
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10 y descarga controlada de QR de Sprint 11.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11 y Device Activation UX de Sprint 12.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion ni notificaciones. Para produccion se evaluara una estrategia de sesion mas robusta.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend ni creacion admin de devices desde frontend. Para produccion se evaluara una estrategia de sesion mas robusta.

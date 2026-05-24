@@ -44,13 +44,17 @@ Sprint 9 agrega UX Hardening & Navigation. `/` funciona como landing inicial del
 
 Auth Frontend Foundation ya existe. `/login` permite ingresar email y password, consume `POST /api/auth/login`, recibe `access_token` y `token_type`, guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token` y muestra el token en `textarea` readonly por transparencia temporal del MVP. `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas. `/login` tiene `Volver al inicio`, detecta sesion temporal existente, muestra `Ya existe una sesión temporal activa.`, permite ir al dashboard, permite cerrar sesion temporal y despues de login exitoso muestra `Continuar al dashboard` sin redireccion automatica.
 
-Private Profile Management Frontend ya existe en `/dashboard`. Lee automaticamente el token desde `sessionStorage` con `getSessionToken()`, valida contra `GET /api/auth/me`, carga dispositivos con `GET /api/devices`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`. Si no hay sesion muestra estado no autenticado y boton/link `Ir a login`. Mantiene fallback tecnico reducido como `Usar token manual` y tiene boton `Cerrar sesion` con `clearSessionToken()`. `/dashboard` tiene `Volver al inicio`.
+Private Profile Management Frontend ya existe en `/dashboard`. Lee automaticamente el token desde `sessionStorage` con `getSessionToken()`, valida contra `GET /api/auth/me`, carga dispositivos con `GET /api/devices`, permite activar/asociar un identificador fisico desde `Activar identificador`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`. Si no hay sesion muestra estado no autenticado y boton/link `Ir a login`. Mantiene fallback tecnico reducido como `Usar token manual` y tiene boton `Cerrar sesion` con `clearSessionToken()`. `/dashboard` tiene `Volver al inicio`.
 
 La sesion frontend actual es temporal para MVP. Usa `sessionStorage`, no `localStorage`, no cookies, no refresh token, no middleware de proteccion y no expiracion/renovacion automatica desde frontend. El backend sigue validando Bearer token en endpoints privados. El token vive solo durante la sesion/pestana del navegador y `sessionStorage` no se comparte entre pestanas. Para produccion se evaluara una estrategia mas robusta.
 
 Campos del perfil privado actual: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`. `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-La UX actual incluye `/login` con estados de carga, exito y error, deteccion de sesion temporal existente, cierre de sesion temporal y continuidad manual al dashboard. `/dashboard` esta organizado en estado de sesion, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, status visual y seleccion. El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
+La UX actual incluye `/login` con estados de carga, exito y error, deteccion de sesion temporal existente, cierre de sesion temporal y continuidad manual al dashboard. `/dashboard` esta organizado en estado de sesion, activacion de identificador, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, estado legible, descripcion operacional y seleccion. El editor agrupa Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica.
+
+Device Activation UX ya existe en `/dashboard`. Usa el formulario `Activar identificador` con input `public_id`, placeholder `PID-XXXXXXXXXX`, boton `Activar identificador`, estado `Activando...` y exito `Identificador activado correctamente.`. El `public_id` puede estar impreso o asociado al QR/NFC fisico, no contiene datos medicos y la UI recomienda verificar fisicamente el identificador antes de activarlo. El cliente frontend es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`, usa `buildApiUrl`, llama `POST /api/devices/activate` con Bearer token y body `{ "public_id": "PID-XXXXXXXXXX" }`, y maneja errores controlados `400`, `401` y `404`. Al activar, el backend asocia el device pendiente al usuario, cambia `pending_activation` a `active` y setea `user_id` y `activated_at`.
+
+El dashboard muestra estados de device como `pending_activation` -> `Pendiente de activación`, `active` -> `Activo`, `disabled` -> `Deshabilitado` y `lost` -> `Reportado como perdido`, con descripcion operacional por estado. No implementar cambio de estado desde frontend, reporte de perdido desde frontend ni creacion admin de devices desde frontend salvo solicitud explicita.
 
 QR Management Frontend ya existe en `/dashboard`. Consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`, muestra `QR generado`, `QR pendiente`, `QR no disponible`, `Consultando QR...` y `Generando QR...`, permite generar/regenerar QR con `POST /api/admin/devices/{device_id}/qr` para usuarios admin y permite descargar el PNG con `GET /api/admin/devices/{device_id}/qr/download` mediante `downloadDeviceQr(deviceId, accessToken): Promise<Blob>`.
 
@@ -74,6 +78,7 @@ Validacion esperada de auth frontend:
 - `GET /p/PID-G2NYZP87KA` responde `200 OK`.
 - `GET /p/PID-AAAAAAAAAA` responde `404 Not Found`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
+- Prueba GUI de activacion: iniciar sesion, ir a `/dashboard`, ingresar un `public_id` pendiente, activar identificador, ver `Identificador activado correctamente.` y confirmar que aparece en `Mis dispositivos` como `Activo`.
 - Usuario admin: ve estado QR y puede generar/regenerar QR.
 - Usuario admin: puede descargar `PID-XXXXXXXXXX.png` desde Gestion QR.
 - QR inexistente: muestra ayuda para generarlo antes de descargarlo.
@@ -81,10 +86,10 @@ Validacion esperada de auth frontend:
 
 Estados de device existentes:
 
-- `pending_activation`
-- `active`
-- `disabled`
-- `lost`
+- `pending_activation` -> `Pendiente de activación`
+- `active` -> `Activo`
+- `disabled` -> `Deshabilitado`
+- `lost` -> `Reportado como perdido`
 
 Endpoints de devices existentes:
 
@@ -108,7 +113,7 @@ El endpoint publico no requiere autenticacion, busca por `Device.public_id`, sol
 
 Los endpoints QR requieren Bearer token y `role=admin`. `GET /qr` devuelve metadata: `device_id`, `public_id`, `object_key`, `content_type` y `exists`. `POST /qr` genera/sube el QR. `GET /qr/download` lee `qr/devices/{public_id}.png` desde MinIO, no genera QR automaticamente, responde `404` si no existe y, si existe, responde PNG con `Content-Type: image/png` y `Content-Disposition: attachment; filename="{public_id}.png"`. No entrega presigned URL ni expone bucket o credenciales.
 
-No implementar registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
+No implementar registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni MFA salvo solicitud explicita.
 
 No crear nuevas tablas ni migraciones salvo solicitud explicita.
 
