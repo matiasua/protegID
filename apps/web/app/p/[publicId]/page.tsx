@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { getPublicDeviceActivationStatus } from "@/lib/public-devices";
 import { getPublicProfile } from "@/lib/public-profile";
 import type { PublicProfile } from "@/types/public-profile";
 
@@ -30,7 +31,13 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
   const profile = await getPublicProfile(publicId);
 
   if (profile === null) {
-    notFound();
+    const activationStatus = await getPublicDeviceActivationStatus(publicId);
+
+    if (activationStatus === null) {
+      notFound();
+    }
+
+    return <ActivationOnboarding publicId={activationStatus.public_id} />;
   }
 
   return (
@@ -45,6 +52,61 @@ export default async function PublicProfilePage({ params }: PublicProfilePagePro
         </div>
 
         <ProfileDetails profile={profile} />
+      </section>
+    </main>
+  );
+}
+
+function ActivationOnboarding({ publicId }: { publicId: string }) {
+  return (
+    <main className="min-h-screen bg-slate-950 px-4 py-6 text-white sm:px-6 md:py-10">
+      <section className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-3xl items-center md:min-h-[calc(100vh-5rem)]">
+        <div className="w-full overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl shadow-black/30">
+          <div className="border-b border-red-100 bg-red-50 px-5 py-4 sm:px-8">
+            <Link className="text-xs font-bold uppercase tracking-[0.22em] text-red-700 underline-offset-4 hover:underline" href="/">
+              ProtegID
+            </Link>
+            <p className="mt-2 text-xs font-bold uppercase tracking-[0.22em] text-red-700">Activacion pendiente</p>
+          </div>
+
+          <div className="space-y-6 p-5 text-slate-950 sm:p-8">
+            <div className="space-y-3">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-700">Primer escaneo</p>
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Identificador ProtegID no activado</h1>
+              <p className="text-lg leading-8 text-slate-700">
+                Este identificador físico aún no está vinculado a una cuenta.
+              </p>
+              <p className="leading-7 text-slate-600">
+                Para activarlo, inicia sesión o crea una cuenta y usa el código de activación incluido dentro del empaque.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Referencia tecnica</p>
+              <p className="mt-1 break-all font-mono text-sm text-slate-700">{publicId}</p>
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                className="inline-flex items-center justify-center rounded-full bg-red-700 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2"
+                href="/login"
+              >
+                Iniciar sesión
+              </Link>
+              <span
+                aria-disabled="true"
+                className="inline-flex cursor-not-allowed items-center justify-center rounded-full border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-bold text-slate-500"
+              >
+                Crear cuenta próximamente
+              </span>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+              <p className="font-semibold">El código de activación no está en el QR/NFC. Está dentro del empaque físico.</p>
+              <p>El QR/NFC solo contiene la URL pública permanente del identificador.</p>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
   );
