@@ -9,6 +9,8 @@
 - No usar IDs secuenciales como identificadores publicos.
 - No exponer IDs internos en URLs publicas.
 - Mantener configuracion sensible mediante variables de entorno.
+- No incluir `claim_code` en QR/NFC, URLs, logs ni respuestas API.
+- No guardar `claim_code` en texto plano; guardar solo `claim_code_hash`.
 
 ## Variables de entorno
 
@@ -67,6 +69,46 @@ Controles de seguridad actuales:
 - `public_id` no usa el UUID interno completo como identificador publico visible.
 - `public_id` no contiene datos medicos.
 - El usuario debe verificar fisicamente el identificador antes de activarlo.
+- `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until` preparan activacion segura por `claim_code` y no se exponen por API.
+- La activacion solo con `public_id` queda considerada insegura para el flujo comercial real.
+
+## First Scan Activation Foundation
+
+Sprint 13 prepara el flujo seguro para primer escaneo de identificadores fisicos:
+
+- ProtegID vendera identificadores con QR impreso y NFC grabado.
+- QR/NFC apuntan a `/p/{public_id}`.
+- `public_id` es publico y no debe ser secuencial.
+- `claim_code` es privado y viene dentro del empaque fisico.
+- `claim_code` no va en QR/NFC.
+- `claim_code` no debe ir en URL, logs ni respuestas API.
+- `claim_code` no debe guardarse en texto plano.
+- `claim_code_hash` no debe exponerse.
+
+Servicio `claim_codes`:
+
+- `generate_claim_code()` usa `secrets` y formato `XXXX-XXXX-XXXX`.
+- El alfabeto evita caracteres ambiguos.
+- `normalize_claim_code()` acepta codigo con o sin guiones.
+- `hash_claim_code()` reutiliza `hash_password()`.
+- `verify_claim_code()` reutiliza `verify_password()`.
+- El servicio no loguea `claim_code` ni persiste el codigo plano.
+
+Endpoint publico de estado:
+
+- `GET /api/public/devices/{public_id}/activation-status` no requiere autenticacion.
+- Responde `200` solo si el device existe y `status == "pending_activation"`.
+- Respuesta minima: `{ "public_id": "PID-XXXXXXXXXX", "activation_required": true, "status": "pending_activation" }`.
+- Para `active`, `disabled`, `lost` o inexistente responde `404` generico.
+- No revela owner, `user_id`, `claim_code_hash`, `claimed_at`, `claim_attempts`, `claim_locked_until`, datos medicos ni perfil.
+
+Limites de seguridad actuales:
+
+- `POST /api/devices/activate` aun no exige `claim_code`.
+- Aun no existe endpoint privado de claim con `public_id + claim_code`.
+- Aun no hay rate limit completo aplicado al endpoint de claim.
+- Aun no hay auditoria formal de intentos.
+- Proximo sprint debe endurecer `POST /api/devices/activate` o reemplazarlo para requerir `public_id + claim_code`.
 
 ## Public Profile Foundation
 
@@ -229,8 +271,8 @@ Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditio
 
 ## Estado actual
 
-El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni MFA.
+El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, UI first-scan, activacion obligatoria con `claim_code`, provisionamiento masivo con export de `claim_code`, rate limit completo para claim, auditoria formal de intentos ni MFA.
 
-Sprint 12 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado, pero no cambia todavia `POST /api/devices/activate` ni frontend.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.

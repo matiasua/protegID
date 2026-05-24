@@ -44,6 +44,8 @@ El backend incluye la base de dispositivos de Sprint 3:
 - `public_id` unico y visible con formato `PID-XXXXXXXXXX`.
 - El alfabeto de `public_id` evita caracteres confusos: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`.
 - `public_id` no es secuencial y no usa el UUID interno completo como identificador publico.
+- Campos de first-scan activation: `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until`.
+- Los campos de claim preparan activacion segura por `claim_code` y no se exponen por API.
 
 Estados actuales de `Device`:
 
@@ -57,8 +59,46 @@ Endpoints actuales de devices:
 - `GET /api/devices`
 - `POST /api/devices/activate`
 - `POST /api/admin/devices`
+- `GET /api/public/devices/{public_id}/activation-status`
 
-`GET /api/devices` requiere token Bearer y solo lista dispositivos del usuario autenticado. `POST /api/devices/activate` requiere token Bearer y body `{ "public_id": "PID-XXXXXXXXXX" }`; activa/asocia un dispositivo `pending_activation` para el usuario autenticado, cambia `status` a `active` y setea `user_id` y `activated_at`. `POST /api/admin/devices` requiere token Bearer y `role=admin`.
+`GET /api/devices` requiere token Bearer y solo lista dispositivos del usuario autenticado. `POST /api/devices/activate` requiere token Bearer y body `{ "public_id": "PID-XXXXXXXXXX" }`; activa/asocia un dispositivo `pending_activation` para el usuario autenticado, cambia `status` a `active` y setea `user_id` y `activated_at`. Ese flujo actual solo con `public_id` queda considerado inseguro para el flujo comercial real y debe endurecerse para requerir `claim_code`. `POST /api/admin/devices` requiere token Bearer y `role=admin`.
+
+## First Scan Activation Foundation
+
+Sprint 13 prepara el flujo de primer escaneo para identificadores fisicos con QR impreso y NFC grabado.
+
+- QR/NFC apuntan a `/p/{public_id}`.
+- `public_id` es publico.
+- `claim_code` es privado, viene dentro del empaque fisico y no va en QR/NFC.
+- `claim_code` no debe guardarse en texto plano; solo se guarda `claim_code_hash`.
+- `claim_code` no debe ir en URL, logs ni respuestas API.
+- `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until` existen en `Device` para soportar claim seguro.
+- Estos campos no se exponen en `DeviceRead` ni en endpoints publicos.
+
+Servicio `apps/api/app/services/claim_codes.py`:
+
+- `generate_claim_code()` genera `XXXX-XXXX-XXXX` con caracteres no ambiguos y `secrets`.
+- `normalize_claim_code()` acepta codigo con o sin guiones.
+- `hash_claim_code()` reutiliza `hash_password()`.
+- `verify_claim_code()` reutiliza `verify_password()` y retorna `False` sin hash o con input vacio.
+
+Endpoint publico minimo:
+
+```http
+GET /api/public/devices/{public_id}/activation-status
+```
+
+Responde `200 OK` solo si el device existe y `status == "pending_activation"`:
+
+```json
+{
+  "public_id": "PID-XXXXXXXXXX",
+  "activation_required": true,
+  "status": "pending_activation"
+}
+```
+
+Para devices `active`, `disabled`, `lost` o inexistentes responde `404` generico. No revela owner, `user_id`, `claim_code_hash`, `claimed_at`, `claim_attempts`, `claim_locked_until`, datos medicos ni perfil.
 
 ## Public Profile Foundation
 
@@ -231,6 +271,8 @@ Sprint 11 mantiene la gestion QR desde el dashboard y agrega descarga controlada
 - El backend sigue validando Bearer token en endpoints privados.
 - El token vive solo durante la sesion/pestana del navegador.
 - `sessionStorage` no se comparte entre pestanas.
+- El endpoint publico de estado de activacion evita revelar estados internos distintos de `pending_activation`.
+- La activacion solo con `public_id` no es suficiente para produccion fisica y debe migrar a `public_id + claim_code`.
 - Para produccion se evaluara una estrategia mas robusta.
 
 ## Restricciones de esta version
@@ -256,14 +298,20 @@ Sprint 11 mantiene la gestion QR desde el dashboard y agrega descarga controlada
 - No hay cambio de estado desde frontend.
 - No hay reporte de perdido desde frontend.
 - No hay creacion admin de devices desde frontend.
+- No hay UI first-scan en `/p/{public_id}`.
+- No hay activacion obligatoria con `claim_code`.
+- No hay registro de usuario final desde primer escaneo.
+- No hay provisionamiento masivo con export de `claim_code`.
+- No hay rate limit completo para endpoint de claim.
+- No hay auditoria formal de intentos de claim.
 
 Los endpoints privados siguen protegidos por Bearer token. El frontend solo consume datos del usuario autenticado segun las validaciones de ownership del backend.
 
 ## Limites de esta etapa
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni MFA.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, UI first-scan, activacion obligatoria con `claim_code`, provisionamiento masivo con export de `claim_code`, rate limit completo para claim, auditoria formal de intentos ni MFA.
 
-Sprint 12 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 13 agrega campos a `devices` mediante migracion Alembic para preparar claim seguro, pero no cambia endpoints de activacion existentes ni frontend.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
 

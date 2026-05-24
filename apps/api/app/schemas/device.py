@@ -20,6 +20,12 @@ class DeviceActivate(BaseModel):
     public_id: str = Field(pattern=r"^PID-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{10}$")
 
 
+class DeviceActivationStatusRead(BaseModel):
+    public_id: str
+    activation_required: bool = True
+    status: Literal["pending_activation"] = "pending_activation"
+
+
 class DeviceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
