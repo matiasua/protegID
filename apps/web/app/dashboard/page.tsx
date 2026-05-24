@@ -8,10 +8,12 @@ import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
+import { createDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
 import { clearSessionToken, getSessionToken } from "@/lib/session";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
 import type { EmergencyProfile, EmergencyProfileInput } from "@/types/emergency-profile";
+import type { DeviceQrStatus } from "@/types/qr-code";
 
 type ProfileFormState = {
   display_name: string;
@@ -37,6 +39,19 @@ type ProfileFieldConfig = {
 type ValidateSessionOptions = {
   clearStoredTokenOnFailure?: boolean;
   updateTokenInput?: boolean;
+};
+
+type DeviceQrActionMessage = {
+  kind: "success" | "error";
+  text: string;
+};
+
+type DeviceQrStatusState = {
+  isLoading: boolean;
+  isGenerating: boolean;
+  status: DeviceQrStatus | null;
+  hasError: boolean;
+  actionMessage: DeviceQrActionMessage | null;
 };
 
 type ProfileFieldGroup = {
@@ -103,6 +118,102 @@ function getProfileErrorMessage(error: unknown, fallbackMessage: string): string
   }
 
   return fallbackMessage;
+}
+
+function getQrGenerationErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 401) {
+      return "Sesión expirada o no autenticada.";
+    }
+
+    if (error.status === 403) {
+      return "La gestión de QR requiere rol admin.";
+    }
+
+    if (error.status === 404) {
+      return "Dispositivo no encontrado.";
+    }
+  }
+
+  return "No se pudo generar el QR.";
+}
+
+function isAdminUser(user: AuthUser | null): boolean {
+  return user?.role.toLowerCase() === "admin";
+}
+
+function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
+  return Object.fromEntries(
+    devices.map<[string, DeviceQrStatusState]>((device) => [
+      device.id,
+      {
+        isLoading: true,
+        isGenerating: false,
+        status: null,
+        hasError: false,
+        actionMessage: null,
+      },
+    ]),
+  );
+}
+
+function createUnavailableQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
+  return Object.fromEntries(
+    devices.map<[string, DeviceQrStatusState]>((device) => [
+      device.id,
+      {
+        isLoading: false,
+        isGenerating: false,
+        status: null,
+        hasError: true,
+        actionMessage: null,
+      },
+    ]),
+  );
+}
+
+function getQrStatusLabel(qrStatusState: DeviceQrStatusState | undefined): string {
+  if (qrStatusState?.isGenerating) {
+    return "Generando QR...";
+  }
+
+  if (!qrStatusState || qrStatusState.isLoading) {
+    return "Consultando QR...";
+  }
+
+  if (qrStatusState.hasError) {
+    return "QR no disponible";
+  }
+
+  return qrStatusState.status?.exists ? "QR generado" : "QR pendiente";
+}
+
+function getQrStatusClass(qrStatusState: DeviceQrStatusState | undefined): string {
+  if (qrStatusState?.isGenerating) {
+    return "border-sky-100 bg-sky-50 text-sky-800";
+  }
+
+  if (!qrStatusState || qrStatusState.isLoading) {
+    return "border-sky-100 bg-sky-50 text-sky-800";
+  }
+
+  if (qrStatusState.hasError) {
+    return "border-slate-200 bg-white text-slate-600";
+  }
+
+  if (qrStatusState.status?.exists) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-900";
+}
+
+function getQrActionMessageClass(message: DeviceQrActionMessage): string {
+  if (message.kind === "success") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-900";
 }
 
 function createEmptyProfileForm(): ProfileFormState {
@@ -190,11 +301,13 @@ export default function DashboardPage() {
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [qrStatusByDeviceId, setQrStatusByDeviceId] = useState<Record<string, DeviceQrStatusState>>({});
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState>(() => createEmptyProfileForm());
   const [hasExistingProfile, setHasExistingProfile] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
+  const [qrAdminMessage, setQrAdminMessage] = useState<string | null>(null);
   const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(null);
   const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
   const [hasCheckedStoredSession, setHasCheckedStoredSession] = useState(false);
@@ -202,6 +315,8 @@ export default function DashboardPage() {
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const qrPermissionMessage = currentUser && !isAdminUser(currentUser) ? "La gestión de QR requiere rol admin." : qrAdminMessage;
+  const canManageQr = currentUser !== null && isAdminUser(currentUser) && qrPermissionMessage === null;
 
   useEffect(() => {
     const storedToken = getSessionToken();
@@ -230,6 +345,8 @@ export default function DashboardPage() {
   function resetAuthenticatedState() {
     setCurrentUser(null);
     setDevices([]);
+    setQrStatusByDeviceId({});
+    setQrAdminMessage(null);
     resetProfileEditor();
   }
 
@@ -241,8 +358,11 @@ export default function DashboardPage() {
   }
 
   async function validateAccessToken(token: string, options: ValidateSessionOptions = {}) {
+    let validatedUser: AuthUser | null = null;
+
     setErrorMessage(null);
     setDeviceErrorMessage(null);
+    setQrAdminMessage(null);
     resetAuthenticatedState();
 
     if (options.updateTokenInput) {
@@ -258,6 +378,7 @@ export default function DashboardPage() {
 
     try {
       const user = await getCurrentUser(token);
+      validatedUser = user;
       setCurrentUser(user);
     } catch (error) {
       if (options.clearStoredTokenOnFailure) {
@@ -276,10 +397,147 @@ export default function DashboardPage() {
     try {
       const userDevices = await getMyDevices(token);
       setDevices(userDevices);
+
+      if (isAdminUser(validatedUser)) {
+        void loadDeviceQrStatuses(userDevices, token);
+      } else {
+        setQrStatusByDeviceId(createUnavailableQrStatusState(userDevices));
+      }
     } catch (error) {
       setDeviceErrorMessage(getDevicesErrorMessage(error));
     } finally {
       setIsLoadingDevices(false);
+    }
+  }
+
+  async function loadDeviceQrStatuses(userDevices: Device[], token: string) {
+    if (userDevices.length === 0) {
+      setQrStatusByDeviceId({});
+      return;
+    }
+
+    setQrStatusByDeviceId(createInitialQrStatusState(userDevices));
+
+    await Promise.all(
+      userDevices.map(async (device) => {
+        try {
+          const qrStatus = await getDeviceQrStatus(device.id, token);
+          setQrStatusByDeviceId((currentStatuses) => ({
+            ...currentStatuses,
+            [device.id]: {
+              isLoading: false,
+              isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+              status: qrStatus,
+              hasError: false,
+              actionMessage: currentStatuses[device.id]?.actionMessage ?? null,
+            },
+          }));
+        } catch (error) {
+          if (error instanceof ApiRequestError && error.status === 403) {
+            setQrAdminMessage("La gestión de QR requiere rol admin.");
+          }
+
+          setQrStatusByDeviceId((currentStatuses) => ({
+            ...currentStatuses,
+            [device.id]: {
+              isLoading: false,
+              isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+              status: null,
+              hasError: true,
+              actionMessage: currentStatuses[device.id]?.actionMessage ?? null,
+            },
+          }));
+        }
+      }),
+    );
+  }
+
+  async function handleGenerateDeviceQr(device: Device) {
+    const token = accessToken.trim();
+
+    if (!token || !currentUser) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: "Sesión expirada o no autenticada.",
+          },
+        },
+      }));
+      return;
+    }
+
+    if (!isAdminUser(currentUser) || qrAdminMessage !== null) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: "La gestión de QR requiere rol admin.",
+          },
+        },
+      }));
+      return;
+    }
+
+    setQrStatusByDeviceId((currentStatuses) => ({
+      ...currentStatuses,
+      [device.id]: {
+        isLoading: currentStatuses[device.id]?.isLoading ?? false,
+        isGenerating: true,
+        status: currentStatuses[device.id]?.status ?? null,
+        hasError: currentStatuses[device.id]?.hasError ?? false,
+        actionMessage: null,
+      },
+    }));
+
+    try {
+      const qrMetadata = await createDeviceQr(device.id, token);
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: false,
+          isGenerating: false,
+          status: {
+            ...qrMetadata,
+            exists: true,
+          },
+          hasError: false,
+          actionMessage: {
+            kind: "success",
+            text: "QR generado correctamente.",
+          },
+        },
+      }));
+    } catch (error) {
+      const message = getQrGenerationErrorMessage(error);
+
+      if (error instanceof ApiRequestError && error.status === 403) {
+        setQrAdminMessage("La gestión de QR requiere rol admin.");
+      }
+
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: false,
+          isGenerating: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: message,
+          },
+        },
+      }));
     }
   }
 
@@ -293,6 +551,7 @@ export default function DashboardPage() {
     setAccessToken("");
     setErrorMessage(null);
     setDeviceErrorMessage(null);
+    setQrAdminMessage(null);
     resetAuthenticatedState();
   }
 
@@ -506,6 +765,12 @@ export default function DashboardPage() {
               </p>
             ) : null}
 
+            {qrPermissionMessage ? (
+              <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {qrPermissionMessage}
+              </p>
+            ) : null}
+
             {!isLoadingDevices && !deviceErrorMessage && devices.length === 0 ? (
               <p className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                 No tienes dispositivos asociados.
@@ -516,6 +781,13 @@ export default function DashboardPage() {
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 {devices.map((device) => {
                   const isSelectedDevice = selectedDevice?.id === device.id;
+                  const qrStatusState = qrStatusByDeviceId[device.id];
+                  const qrActionButtonLabel = qrStatusState?.isGenerating
+                    ? "Generando QR..."
+                    : qrStatusState?.status?.exists
+                      ? "Regenerar QR"
+                      : "Generar QR";
+                  const isQrActionDisabled = !canManageQr || !qrStatusState || qrStatusState.isLoading || qrStatusState.isGenerating;
 
                   return (
                   <article
@@ -554,6 +826,48 @@ export default function DashboardPage() {
                         <dd className="mt-1 text-slate-950">{formatActivatedAt(device.activated_at)}</dd>
                       </div>
                     </dl>
+
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-950">Gestión QR</h4>
+                          <p className="mt-1 text-sm leading-6 text-slate-600">
+                            Apunta al perfil público <span className="font-mono text-slate-800">/p/{device.public_id}</span>.
+                          </p>
+                        </div>
+                        <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getQrStatusClass(qrStatusState)}`}>
+                          {getQrStatusLabel(qrStatusState)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                        <p>El QR solo contiene la URL pública del perfil. No incluye datos médicos embebidos.</p>
+                        <p className="mt-1">La visualización depende de que el perfil esté marcado como público.</p>
+                      </div>
+
+                      {qrStatusState?.status?.object_key ? (
+                        <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          <summary className="cursor-pointer font-medium text-slate-700">Detalle técnico</summary>
+                          <p className="mt-2 break-all font-mono text-slate-500">{qrStatusState.status.object_key}</p>
+                        </details>
+                      ) : null}
+
+                      {qrStatusState?.actionMessage ? (
+                        <p className={`mt-3 rounded-xl border px-3 py-2 text-sm ${getQrActionMessageClass(qrStatusState.actionMessage)}`}>
+                          {qrStatusState.actionMessage.text}
+                        </p>
+                      ) : null}
+
+                      <Button
+                        className="mt-4 w-full sm:w-auto"
+                        disabled={isQrActionDisabled}
+                        onClick={() => void handleGenerateDeviceQr(device)}
+                        type="button"
+                        variant="outline"
+                      >
+                        {qrActionButtonLabel}
+                      </Button>
+                    </div>
 
                     <div className="mt-5">
                       <Button
