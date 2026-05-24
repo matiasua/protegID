@@ -8,7 +8,7 @@ import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
-import { createDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
+import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
 import { clearSessionToken, getSessionToken } from "@/lib/session";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
@@ -49,6 +49,7 @@ type DeviceQrActionMessage = {
 type DeviceQrStatusState = {
   isLoading: boolean;
   isGenerating: boolean;
+  isDownloading: boolean;
   status: DeviceQrStatus | null;
   hasError: boolean;
   actionMessage: DeviceQrActionMessage | null;
@@ -138,6 +139,24 @@ function getQrGenerationErrorMessage(error: unknown): string {
   return "No se pudo generar el QR.";
 }
 
+function getQrDownloadErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 401) {
+      return "Sesión expirada o no autenticada.";
+    }
+
+    if (error.status === 403) {
+      return "La gestión de QR requiere rol admin.";
+    }
+
+    if (error.status === 404) {
+      return "QR no encontrado.";
+    }
+  }
+
+  return "No se pudo descargar el QR.";
+}
+
 function isAdminUser(user: AuthUser | null): boolean {
   return user?.role.toLowerCase() === "admin";
 }
@@ -149,6 +168,7 @@ function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrS
       {
         isLoading: true,
         isGenerating: false,
+        isDownloading: false,
         status: null,
         hasError: false,
         actionMessage: null,
@@ -164,6 +184,7 @@ function createUnavailableQrStatusState(devices: Device[]): Record<string, Devic
       {
         isLoading: false,
         isGenerating: false,
+        isDownloading: false,
         status: null,
         hasError: true,
         actionMessage: null,
@@ -427,6 +448,7 @@ export default function DashboardPage() {
             [device.id]: {
               isLoading: false,
               isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+              isDownloading: currentStatuses[device.id]?.isDownloading ?? false,
               status: qrStatus,
               hasError: false,
               actionMessage: currentStatuses[device.id]?.actionMessage ?? null,
@@ -442,6 +464,7 @@ export default function DashboardPage() {
             [device.id]: {
               isLoading: false,
               isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+              isDownloading: currentStatuses[device.id]?.isDownloading ?? false,
               status: null,
               hasError: true,
               actionMessage: currentStatuses[device.id]?.actionMessage ?? null,
@@ -461,6 +484,7 @@ export default function DashboardPage() {
         [device.id]: {
           isLoading: currentStatuses[device.id]?.isLoading ?? false,
           isGenerating: false,
+          isDownloading: false,
           status: currentStatuses[device.id]?.status ?? null,
           hasError: currentStatuses[device.id]?.hasError ?? false,
           actionMessage: {
@@ -478,6 +502,7 @@ export default function DashboardPage() {
         [device.id]: {
           isLoading: currentStatuses[device.id]?.isLoading ?? false,
           isGenerating: false,
+          isDownloading: false,
           status: currentStatuses[device.id]?.status ?? null,
           hasError: currentStatuses[device.id]?.hasError ?? false,
           actionMessage: {
@@ -494,6 +519,7 @@ export default function DashboardPage() {
       [device.id]: {
         isLoading: currentStatuses[device.id]?.isLoading ?? false,
         isGenerating: true,
+        isDownloading: currentStatuses[device.id]?.isDownloading ?? false,
         status: currentStatuses[device.id]?.status ?? null,
         hasError: currentStatuses[device.id]?.hasError ?? false,
         actionMessage: null,
@@ -507,6 +533,7 @@ export default function DashboardPage() {
         [device.id]: {
           isLoading: false,
           isGenerating: false,
+          isDownloading: currentStatuses[device.id]?.isDownloading ?? false,
           status: {
             ...qrMetadata,
             exists: true,
@@ -530,6 +557,7 @@ export default function DashboardPage() {
         [device.id]: {
           isLoading: false,
           isGenerating: false,
+          isDownloading: currentStatuses[device.id]?.isDownloading ?? false,
           status: currentStatuses[device.id]?.status ?? null,
           hasError: currentStatuses[device.id]?.hasError ?? false,
           actionMessage: {
@@ -538,6 +566,134 @@ export default function DashboardPage() {
           },
         },
       }));
+    }
+  }
+
+  async function handleDownloadDeviceQr(device: Device) {
+    const token = accessToken.trim();
+
+    if (!token || !currentUser) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+          isDownloading: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: "Sesión expirada o no autenticada.",
+          },
+        },
+      }));
+      return;
+    }
+
+    if (!isAdminUser(currentUser) || qrAdminMessage !== null) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+          isDownloading: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: "La gestión de QR requiere rol admin.",
+          },
+        },
+      }));
+      return;
+    }
+
+    if (!qrStatusByDeviceId[device.id]?.status?.exists) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+          isDownloading: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: "QR no encontrado.",
+          },
+        },
+      }));
+      return;
+    }
+
+    setQrStatusByDeviceId((currentStatuses) => ({
+      ...currentStatuses,
+      [device.id]: {
+        isLoading: currentStatuses[device.id]?.isLoading ?? false,
+        isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+        isDownloading: true,
+        status: currentStatuses[device.id]?.status ?? null,
+        hasError: currentStatuses[device.id]?.hasError ?? false,
+        actionMessage: null,
+      },
+    }));
+
+    try {
+      const qrBlob = await downloadDeviceQr(device.id, token);
+      const objectUrl = URL.createObjectURL(qrBlob);
+      const link = document.createElement("a");
+
+      try {
+        link.href = objectUrl;
+        link.download = `${device.public_id}.png`;
+        document.body.appendChild(link);
+        link.click();
+      } finally {
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+      }
+
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: false,
+          isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+          isDownloading: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: false,
+          actionMessage: {
+            kind: "success",
+            text: "QR descargado correctamente.",
+          },
+        },
+      }));
+    } catch (error) {
+      const message = getQrDownloadErrorMessage(error);
+
+      if (error instanceof ApiRequestError && error.status === 403) {
+        setQrAdminMessage("La gestión de QR requiere rol admin.");
+      }
+
+      setQrStatusByDeviceId((currentStatuses) => {
+        const currentStatus = currentStatuses[device.id]?.status ?? null;
+
+        return {
+          ...currentStatuses,
+          [device.id]: {
+            isLoading: false,
+            isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+            isDownloading: false,
+            status: error instanceof ApiRequestError && error.status === 404 && currentStatus
+              ? { ...currentStatus, exists: false }
+              : currentStatus,
+            hasError: currentStatuses[device.id]?.hasError ?? false,
+            actionMessage: {
+              kind: "error",
+              text: message,
+            },
+          },
+        };
+      });
     }
   }
 
@@ -787,7 +943,17 @@ export default function DashboardPage() {
                     : qrStatusState?.status?.exists
                       ? "Regenerar QR"
                       : "Generar QR";
-                  const isQrActionDisabled = !canManageQr || !qrStatusState || qrStatusState.isLoading || qrStatusState.isGenerating;
+                  const qrDownloadButtonLabel = qrStatusState?.isDownloading ? "Descargando QR..." : "Descargar QR";
+                  const isQrActionDisabled = !canManageQr || !qrStatusState || qrStatusState.isLoading || qrStatusState.isGenerating || qrStatusState.isDownloading;
+                  const isQrDownloadDisabled =
+                    !canManageQr ||
+                    accessToken.trim().length === 0 ||
+                    !qrStatusState ||
+                    qrStatusState.isLoading ||
+                    qrStatusState.isGenerating ||
+                    qrStatusState.isDownloading ||
+                    qrStatusState.hasError ||
+                    !qrStatusState.status?.exists;
 
                   return (
                   <article
@@ -858,15 +1024,26 @@ export default function DashboardPage() {
                         </p>
                       ) : null}
 
-                      <Button
-                        className="mt-4 w-full sm:w-auto"
-                        disabled={isQrActionDisabled}
-                        onClick={() => void handleGenerateDeviceQr(device)}
-                        type="button"
-                        variant="outline"
-                      >
-                        {qrActionButtonLabel}
-                      </Button>
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          className="w-full sm:w-auto"
+                          disabled={isQrActionDisabled}
+                          onClick={() => void handleGenerateDeviceQr(device)}
+                          type="button"
+                          variant="outline"
+                        >
+                          {qrActionButtonLabel}
+                        </Button>
+                        <Button
+                          className="w-full sm:w-auto"
+                          disabled={isQrDownloadDisabled}
+                          onClick={() => void handleDownloadDeviceQr(device)}
+                          type="button"
+                          variant="outline"
+                        >
+                          {qrDownloadButtonLabel}
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="mt-5">
