@@ -54,7 +54,7 @@ Estados de device:
 Endpoints protegidos:
 
 - `GET /api/devices`: requiere Bearer token y solo lista devices del usuario autenticado.
-- `POST /api/devices/activate`: requiere Bearer token y activa un device `pending_activation` por `public_id`.
+- `POST /api/devices/activate`: requiere Bearer token y body `{ "public_id": "PID-XXXXXXXXXX" }`; activa/asocia un device `pending_activation` por `public_id`, cambia `status` a `active` y setea `user_id` y `activated_at`.
 - `POST /api/admin/devices`: requiere Bearer token y `role=admin`; crea un device `pending_activation`.
 
 ## Public Profile Foundation
@@ -117,7 +117,7 @@ El frontend publico existe en `/p/{public_id}`. Ejemplo local: `http://localhost
 
 ## Integracion con frontend privado
 
-El frontend privado existe en `/login` y `/dashboard`; Sprint 11 agrega gestion QR con descarga controlada desde el dashboard sin cambiar auth backend.
+El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activacion de identificadores desde el dashboard sin cambiar auth backend.
 
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
@@ -129,6 +129,7 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 11 agrega gestion 
 - `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Carga dispositivos con `GET /api/devices`.
+- Permite activar/asociar un identificador fisico desde la seccion `Activar identificador` usando `POST /api/devices/activate`.
 - Permite seleccionar un dispositivo.
 - Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
@@ -140,6 +141,12 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 11 agrega gestion 
 - Si descarga correctamente muestra `QR descargado correctamente.`.
 - Si el QR no existe muestra `Genera el QR antes de descargarlo.`.
 - Si el usuario no es admin o QR responde `403`, muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
+- El cliente frontend de activacion es `activateDevice(publicId, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`, usa `buildApiUrl` y maneja `400`, `401` y `404` con errores controlados.
+- `Activar identificador` usa input `public_id`, placeholder `PID-XXXXXXXXXX`, boton `Activar identificador`, estado `Activando...` y exito `Identificador activado correctamente.`.
+- El `public_id` puede estar impreso o asociado al QR/NFC fisico, no contiene datos medicos y debe verificarse fisicamente antes de activarlo.
+- La lista de dispositivos se refresca o actualiza al activar.
+- Estados visibles: `pending_activation` -> `Pendiente de activación`, `active` -> `Activo`, `disabled` -> `Deshabilitado`, `lost` -> `Reportado como perdido`.
+- El dashboard muestra descripcion operacional por estado.
 - El QR apunta a `/p/{public_id}`, solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
 - `object_key` se muestra como detalle tecnico.
 - La descarga usa `URL.createObjectURL` y luego `URL.revokeObjectURL`.
@@ -252,6 +259,6 @@ curl http://localhost:8000/api/public/profiles/PID-ABCDEFGH23
 
 ## Limites actuales
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR ni presigned URL publica.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR ni presigned URL publica.
 
-Sprint 11 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 12 no agrega nuevas tablas ni nuevas migraciones.

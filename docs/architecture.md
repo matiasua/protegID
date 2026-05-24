@@ -47,10 +47,10 @@ El backend incluye la base de dispositivos de Sprint 3:
 
 Estados actuales de `Device`:
 
-- `pending_activation`
-- `active`
-- `disabled`
-- `lost`
+- `pending_activation` -> `Pendiente de activación` en dashboard.
+- `active` -> `Activo` en dashboard.
+- `disabled` -> `Deshabilitado` en dashboard.
+- `lost` -> `Reportado como perdido` en dashboard.
 
 Endpoints actuales de devices:
 
@@ -58,7 +58,7 @@ Endpoints actuales de devices:
 - `POST /api/devices/activate`
 - `POST /api/admin/devices`
 
-`GET /api/devices` requiere token Bearer y solo lista dispositivos del usuario autenticado. `POST /api/devices/activate` requiere token Bearer y activa un dispositivo `pending_activation` para el usuario autenticado. `POST /api/admin/devices` requiere token Bearer y `role=admin`.
+`GET /api/devices` requiere token Bearer y solo lista dispositivos del usuario autenticado. `POST /api/devices/activate` requiere token Bearer y body `{ "public_id": "PID-XXXXXXXXXX" }`; activa/asocia un dispositivo `pending_activation` para el usuario autenticado, cambia `status` a `active` y setea `user_id` y `activated_at`. `POST /api/admin/devices` requiere token Bearer y `role=admin`.
 
 ## Public Profile Foundation
 
@@ -153,6 +153,7 @@ El frontend privado inicial existe en Next.js App Router.
 - `/dashboard` lee automaticamente el token desde `sessionStorage` con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
+- Permite activar/asociar identificadores fisicos desde `Activar identificador` usando `POST /api/devices/activate`.
 - Si no hay sesion, muestra estado no autenticado y boton/link `Ir a login`.
 - Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
 - Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
@@ -177,7 +178,24 @@ Campos gestionados por el formulario privado:
 
 `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
 
-La UX actual de `/login` tiene encabezado claro, formulario limpio, estados visibles, deteccion de sesion temporal existente, cierre de sesion temporal y continuidad manual al dashboard. La UX actual de `/dashboard` esta organizada en secciones de estado de sesion, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, status visual, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
+La UX actual de `/login` tiene encabezado claro, formulario limpio, estados visibles, deteccion de sesion temporal existente, cierre de sesion temporal y continuidad manual al dashboard. La UX actual de `/dashboard` esta organizada en secciones de estado de sesion, activacion de identificador, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, estado legible, descripcion operacional, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
+
+## Device Activation UX
+
+Sprint 12 agrega activacion de identificadores desde `/dashboard`.
+
+- La seccion `Activar identificador` permite ingresar el `public_id` impreso o asociado al QR/NFC fisico.
+- El `public_id` esperado tiene formato `PID-XXXXXXXXXX`.
+- El `public_id` no contiene datos medicos y la UI recomienda verificar fisicamente el identificador antes de activarlo.
+- El formulario muestra boton `Activar identificador`, estado `Activando...` y exito `Identificador activado correctamente.`.
+- El frontend usa `activateDevice(publicId, accessToken): Promise<Device>` desde `apps/web/lib/devices.ts`.
+- El cliente usa `buildApiUrl`, envia Bearer token y body JSON `{ "public_id": "PID-XXXXXXXXXX" }`.
+- Maneja errores controlados: `400` identificador no disponible para activacion, `401` sesion expirada o no autenticada, `404` identificador no encontrado.
+- Al activar correctamente, el dashboard refresca/actualiza `Mis dispositivos` y mantiene perfil, QR, generacion, descarga y edicion.
+- El dashboard muestra descripcion operacional por estado de device.
+- Para `active` mantiene edicion de perfil y gestion QR.
+- Para `disabled`, `lost` o `pending_activation` muestra advertencias y deshabilita acciones sensibles cuando aplica.
+- El backend sigue siendo la fuente de autorizacion.
 
 ## QR Management Frontend
 
@@ -228,18 +246,24 @@ Sprint 11 mantiene la gestion QR desde el dashboard y agrega descarga controlada
 - No hay presigned URLs.
 - No hay preview de imagen QR.
 - No hay apertura directa de MinIO.
+- No hay scanner QR.
+- No hay lectura NFC.
+- No hay camara.
 - No hay NFC funcional.
 - No hay tracking de escaneos.
 - No hay geolocalizacion.
 - No hay notificaciones.
+- No hay cambio de estado desde frontend.
+- No hay reporte de perdido desde frontend.
+- No hay creacion admin de devices desde frontend.
 
 Los endpoints privados siguen protegidos por Bearer token. El frontend solo consume datos del usuario autenticado segun las validaciones de ownership del backend.
 
 ## Limites de esta etapa
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, descarga publica de QR, presigned URL publica ni MFA.
+No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni MFA.
 
-Sprint 11 no agrega nuevas tablas ni nuevas migraciones.
+Sprint 12 no agrega nuevas tablas ni nuevas migraciones.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
 
