@@ -88,7 +88,9 @@ La ruta publica frontend `/p/{public_id}` ya existe. Ejemplo local: `http://loca
 - La pagina no requiere login.
 - Consulta server-side `GET /api/public/profiles/{public_id}`.
 - Si el perfil existe y esta disponible, responde `200 OK` y renderiza una ficha de emergencia.
-- Si no existe o no esta disponible, responde `404` real usando `notFound()`.
+- Si no existe perfil publico, consulta `GET /api/public/devices/{public_id}/activation-status` mediante `getPublicDeviceActivationStatus(publicId)` en `apps/web/lib/public-devices.ts`.
+- Si `activation-status` responde `pending_activation`, muestra onboarding publico con titulo `Identificador ProtegID no activado`.
+- Si `activation-status` retorna `404`, mantiene `404` real o mensaje generico usando `notFound()`.
 - No expone IDs internos, `device_id`, timestamps ni `deleted_at`.
 - Solo muestra datos incluidos en `EmergencyProfilePublicRead`.
 - El estado 404 no revela si el `public_id` existe o no.
@@ -96,6 +98,27 @@ La ruta publica frontend `/p/{public_id}` ya existe. Ejemplo local: `http://loca
 - Los campos vacios se muestran como `No informado`.
 - `/p/{public_id}` incluye un enlace discreto `ProtegID` hacia `/`.
 - El not-found publico mantiene `404` real, permite volver al inicio y no revela si el `public_id` existe.
+
+## First Scan Onboarding Frontend
+
+Sprint 15 agrega el flujo frontend de primer escaneo sobre la URL publica permanente `/p/{public_id}`.
+
+- El QR/NFC apunta a `/p/{public_id}` y solo contiene esa URL publica permanente.
+- Si existe perfil publico, `/p/{public_id}` mantiene la ficha publica.
+- Si no existe perfil publico, el frontend consulta `GET /api/public/devices/{public_id}/activation-status`.
+- El cliente publico vive en `apps/web/lib/public-devices.ts` y expone `getPublicDeviceActivationStatus(publicId)`.
+- `getPublicDeviceActivationStatus(publicId)` retorna estado de activacion en `200`, retorna `null` en `404`, no usa token, no envia `Authorization` y no maneja `claim_code`.
+- Si el estado es `pending_activation`, `/p/{public_id}` muestra `Identificador ProtegID no activado`.
+- El onboarding indica que el identificador fisico aun no esta vinculado a una cuenta.
+- Indica que el codigo de activacion viene dentro del empaque fisico.
+- Indica que el QR/NFC solo contiene la URL publica permanente del identificador.
+- Muestra `public_id` como referencia tecnica discreta.
+- Si no hay sesion temporal, muestra CTA `Iniciar sesión` hacia `/login` y explica que el usuario debe volver a escanear o regresar a la URL.
+- El registro queda marcado como `Crear cuenta próximamente`.
+- Si hay sesion temporal, `apps/web/app/p/[publicId]/activation-form.tsx` permite ingresar `claim_code`.
+- El formulario usa `getSessionToken()` y llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)`.
+- La activacion envia `POST /api/devices/activate` con body `{ "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }`.
+- En exito muestra `Identificador activado correctamente.` y CTA `Ir al dashboard`.
 
 ## Auth Frontend Foundation
 
@@ -117,7 +140,7 @@ La primera version del login frontend y sesion temporal existe.
 - `/dashboard` lee automaticamente el token con `getSessionToken()`.
 - `/dashboard` valida sesion contra `GET /api/auth/me`.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
-- Permite activar/asociar un identificador fisico desde la seccion `Activar identificador`; el backend ya requiere `public_id + claim_code`, por lo que el dashboard actual puede quedar temporalmente incompatible hasta el sprint frontend.
+- Permite activar/asociar un identificador fisico desde la seccion `Activar identificador` ingresando `public_id` y `claim_code`.
 - Por cada dispositivo, consulta estado QR con `GET /api/admin/devices/{device_id}/qr`.
 - Permite generar o regenerar QR desde la GUI con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
 - Permite seleccionar un dispositivo y cargar su perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
@@ -148,7 +171,11 @@ Sprint 14 actualiza `POST /api/devices/activate`: ya no activa solo con `public_
 - Solo se activa un device existente con `status == "pending_activation"`, sin `user_id` asignado y con `claim_code_hash` existente.
 - Si la activacion es valida, el device pasa a `active`, se asigna `user_id`, se setean `activated_at` y `claimed_at`, `claim_attempts` vuelve a `0` y `claim_locked_until` queda `null`.
 - Proteccion anti fuerza bruta: `MAX_CLAIM_ATTEMPTS = 5`, `CLAIM_LOCK_MINUTES = 15`; cada codigo incorrecto incrementa `claim_attempts`, el quinto intento setea `claim_locked_until` y durante el bloqueo responde `429`.
-- El dashboard actual todavia debe actualizarse para enviar `claim_code`; hasta el sprint frontend puede quedar temporalmente incompatible con la nueva activacion.
+- El dashboard usa `activateDeviceWithClaimCode()` y envia `public_id + claim_code`.
+- La seccion `Activar identificador` del dashboard pide `public_id` y `claim_code`, refresca la lista de dispositivos despues de activar y limpia `claim_code` del estado.
+- Errores controlados en frontend: `400` -> `Datos de activación inválidos.`, `401` -> `Sesión expirada o no autenticada.`, `404` -> `Identificador no disponible.`, `422` -> `Código de activación inválido o incompleto.`, `429` -> `Demasiados intentos. Intenta nuevamente más tarde.`.
+- `claim_code` no va en QR/NFC, no va en URL, no se guarda en `sessionStorage`, no se guarda en `localStorage`, no se loguea y no se muestra despues del envio.
+- El access token sigue siendo temporal en `sessionStorage` y el backend sigue siendo la fuente de autorizacion.
 
 Endpoint usado:
 
@@ -216,9 +243,15 @@ GET /api/public/devices/{public_id}/activation-status
 
 Limites actuales:
 
-- Aun no existe UI first-scan en `/p/{public_id}`.
-- El dashboard actual puede quedar temporalmente incompatible porque todavia debe enviar `claim_code`.
 - Aun no existe registro de usuario final desde primer escaneo.
+- El boton `Crear cuenta` queda como proximamente.
+- El usuario debe iniciar sesion antes de reclamar.
+- La sesion sigue siendo temporal por `sessionStorage`.
+- No hay scanner QR.
+- No hay lectura NFC real desde navegador.
+- No hay tracking.
+- No hay geolocalizacion.
+- No hay notificaciones.
 - Aun no existe provisionamiento masivo con export de `claim_code`.
 - Aun no hay auditoria formal de intentos.
 
@@ -227,6 +260,15 @@ Validacion esperada:
 - `python3 -m py_compile apps/api/app/api/devices.py apps/api/app/schemas/device.py`
 - `git diff --check`
 - `docker compose exec -T protegid-api alembic upgrade head`
+- `docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run build"`
+- `GET /p/{public_id_pending}` -> `200` y muestra onboarding.
+- `GET /dashboard` -> `200`.
+- Onboarding sin sesion muestra CTA login.
+- Onboarding con sesion muestra formulario `claim_code`.
+- `claim_code` correcto activa device.
+- `claim_code` incorrecto muestra error controlado.
+- Dashboard activa con `public_id + claim_code`.
+- `claim_code` no queda en `sessionStorage` ni `localStorage`.
 - `GET /api/public/devices/{public_id}/activation-status` con `pending_activation` -> `200`.
 - `GET /api/public/devices/{public_id}/activation-status` con `active`, `disabled`, `lost` o inexistente -> `404`.
 - `POST /api/devices/activate` sin token -> `401`.
@@ -284,6 +326,6 @@ Validacion esperada:
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12, First Scan Activation Foundation de Sprint 13 y Claim Code Activation Backend de Sprint 14.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12, First Scan Activation Foundation de Sprint 13, Claim Code Activation Backend de Sprint 14 y First Scan Onboarding Frontend de Sprint 15.
 
-Limites actuales: el frontend todavia debe actualizarse para enviar `claim_code`, el dashboard actual puede quedar temporalmente incompatible con la nueva activacion, no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, UI first-scan en `/p/{public_id}`, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. Para produccion se evaluara una estrategia de sesion mas robusta.
+Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. Para produccion se evaluara una estrategia de sesion mas robusta.
