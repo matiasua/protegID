@@ -6,7 +6,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
-import { getMyDevices } from "@/lib/devices";
+import { activateDevice, getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
 import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
 import { clearSessionToken, getSessionToken } from "@/lib/session";
@@ -107,6 +107,24 @@ function getDevicesErrorMessage(error: unknown): string {
   }
 
   return "No se pudieron cargar tus dispositivos.";
+}
+
+function getActivationErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    if (error.status === 400) {
+      return "Identificador no disponible para activación.";
+    }
+
+    if (error.status === 401) {
+      return "Sesión expirada o no autenticada.";
+    }
+
+    if (error.status === 404) {
+      return "Identificador no encontrado.";
+    }
+  }
+
+  return "No se pudo activar el identificador.";
 }
 
 function getProfileErrorMessage(error: unknown, fallbackMessage: string): string {
@@ -324,16 +342,20 @@ export default function DashboardPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [qrStatusByDeviceId, setQrStatusByDeviceId] = useState<Record<string, DeviceQrStatusState>>({});
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [activationPublicId, setActivationPublicId] = useState("");
   const [profileForm, setProfileForm] = useState<ProfileFormState>(() => createEmptyProfileForm());
   const [hasExistingProfile, setHasExistingProfile] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
+  const [activationErrorMessage, setActivationErrorMessage] = useState<string | null>(null);
+  const [activationSuccessMessage, setActivationSuccessMessage] = useState<string | null>(null);
   const [qrAdminMessage, setQrAdminMessage] = useState<string | null>(null);
   const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(null);
   const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
   const [hasCheckedStoredSession, setHasCheckedStoredSession] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
+  const [isActivatingDevice, setIsActivatingDevice] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const qrPermissionMessage = currentUser && !isAdminUser(currentUser) ? "La gestión de QR requiere rol admin." : qrAdminMessage;
@@ -363,11 +385,19 @@ export default function DashboardPage() {
     setIsSavingProfile(false);
   }
 
+  function resetActivationForm() {
+    setActivationPublicId("");
+    setActivationErrorMessage(null);
+    setActivationSuccessMessage(null);
+    setIsActivatingDevice(false);
+  }
+
   function resetAuthenticatedState() {
     setCurrentUser(null);
     setDevices([]);
     setQrStatusByDeviceId({});
     setQrAdminMessage(null);
+    resetActivationForm();
     resetProfileEditor();
   }
 
@@ -702,6 +732,61 @@ export default function DashboardPage() {
     await validateAccessToken(accessToken.trim());
   }
 
+  async function handleActivateIdentifier(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const token = accessToken.trim();
+    const publicId = activationPublicId.trim();
+
+    setActivationErrorMessage(null);
+    setActivationSuccessMessage(null);
+
+    if (!token) {
+      setActivationErrorMessage("Sesión expirada o no autenticada.");
+      return;
+    }
+
+    if (!publicId) {
+      setActivationErrorMessage("Ingresa un public_id antes de activar.");
+      return;
+    }
+
+    setIsActivatingDevice(true);
+
+    try {
+      const activatedDevice = await activateDevice(publicId, token);
+      const nextDevices = [activatedDevice, ...devices.filter((device) => device.id !== activatedDevice.id)];
+
+      setDevices(nextDevices);
+
+      if (isAdminUser(currentUser)) {
+        void loadDeviceQrStatuses(nextDevices, token);
+      } else {
+        setQrStatusByDeviceId(createUnavailableQrStatusState(nextDevices));
+      }
+
+      setActivationPublicId("");
+      setActivationSuccessMessage("Identificador activado correctamente.");
+
+      try {
+        const userDevices = await getMyDevices(token);
+        setDevices(userDevices);
+
+        if (isAdminUser(currentUser)) {
+          void loadDeviceQrStatuses(userDevices, token);
+        } else {
+          setQrStatusByDeviceId(createUnavailableQrStatusState(userDevices));
+        }
+      } catch (error) {
+        setDeviceErrorMessage(getDevicesErrorMessage(error));
+      }
+    } catch (error) {
+      setActivationErrorMessage(getActivationErrorMessage(error));
+    } finally {
+      setIsActivatingDevice(false);
+    }
+  }
+
   function handleLogout() {
     clearSessionToken();
     setAccessToken("");
@@ -908,6 +993,54 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
+
+            <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-labelledby="activation-title">
+              <div className="max-w-3xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">Vinculación</p>
+                <h3 className="mt-2 text-xl font-bold tracking-tight" id="activation-title">
+                  Activar identificador
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Ingresa el public_id impreso o asociado al QR/NFC para vincularlo a tu cuenta.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  El public_id no es un dato médico. Verifica físicamente el identificador antes de activarlo.
+                </p>
+              </div>
+
+              <form className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={handleActivateIdentifier}>
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-slate-700" htmlFor="activation-public-id">
+                    Public ID
+                  </label>
+                  <input
+                    autoComplete="off"
+                    className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm uppercase text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    disabled={isActivatingDevice}
+                    id="activation-public-id"
+                    onChange={(event) => setActivationPublicId(event.target.value)}
+                    placeholder="PID-XXXXXXXXXX"
+                    type="text"
+                    value={activationPublicId}
+                  />
+                </div>
+                <Button className="w-full sm:w-auto" disabled={isActivatingDevice || activationPublicId.trim().length === 0} type="submit">
+                  {isActivatingDevice ? "Activando..." : "Activar identificador"}
+                </Button>
+              </form>
+
+              {activationSuccessMessage ? (
+                <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                  {activationSuccessMessage}
+                </p>
+              ) : null}
+
+              {activationErrorMessage ? (
+                <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+                  {activationErrorMessage}
+                </p>
+              ) : null}
+            </section>
 
             {isLoadingDevices ? (
               <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
