@@ -8,12 +8,12 @@ import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth";
 import { activateDeviceWithClaimCode, getMyDevices } from "@/lib/devices";
-import { getEmergencyProfile, upsertEmergencyProfile } from "@/lib/emergency-profiles";
+import { getEmergencyProfile, getEmergencyProfileReadiness, upsertEmergencyProfile } from "@/lib/emergency-profiles";
 import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
 import { clearSessionToken, getSessionToken } from "@/lib/session";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
-import type { EmergencyProfile, EmergencyProfileInput } from "@/types/emergency-profile";
+import type { EmergencyProfile, EmergencyProfileInput, EmergencyProfileReadiness } from "@/types/emergency-profile";
 import type { DeviceQrStatus } from "@/types/qr-code";
 
 type ProfileFormState = {
@@ -27,14 +27,32 @@ type ProfileFormState = {
   emergency_contact_relationship: string;
   notes: string;
   is_public: boolean;
+  medical_conditions_none: boolean;
+  allergies_none: boolean;
+  medications_none: boolean;
+  public_consent_accepted_at: string | null;
+  public_consent_version: string | null;
 };
 
-type ProfileTextFieldName = Exclude<keyof ProfileFormState, "is_public">;
+type ProfileTextFieldName =
+  | "display_name"
+  | "blood_type"
+  | "allergies"
+  | "medical_conditions"
+  | "medications"
+  | "emergency_contact_name"
+  | "emergency_contact_phone"
+  | "emergency_contact_relationship"
+  | "notes";
+
+type ProfileDecisionFieldName = "medical_conditions_none" | "allergies_none" | "medications_none";
 
 type ProfileFieldConfig = {
   name: ProfileTextFieldName;
   label: string;
   multiline?: boolean;
+  noneField?: ProfileDecisionFieldName;
+  noneLabel?: string;
 };
 
 type ValidateSessionOptions = {
@@ -70,9 +88,27 @@ const PROFILE_FIELD_GROUPS: ProfileFieldGroup[] = [
     title: "Información médica",
     fields: [
       { name: "blood_type", label: "Tipo de sangre" },
-      { name: "allergies", label: "Alergias", multiline: true },
-      { name: "medical_conditions", label: "Condiciones medicas", multiline: true },
-      { name: "medications", label: "Medicamentos", multiline: true },
+      {
+        name: "allergies",
+        label: "Alergias",
+        multiline: true,
+        noneField: "allergies_none",
+        noneLabel: "Sin alergias declaradas",
+      },
+      {
+        name: "medical_conditions",
+        label: "Condiciones medicas",
+        multiline: true,
+        noneField: "medical_conditions_none",
+        noneLabel: "Sin condiciones medicas declaradas",
+      },
+      {
+        name: "medications",
+        label: "Medicamentos",
+        multiline: true,
+        noneField: "medications_none",
+        noneLabel: "Sin medicamentos declarados",
+      },
       { name: "notes", label: "Notas", multiline: true },
     ],
   },
@@ -141,11 +177,81 @@ function getProfileErrorMessage(error: unknown, fallbackMessage: string): string
     return "No autorizado para gestionar este perfil de emergencia.";
   }
 
+  if (error instanceof ApiRequestError && error.status === 422) {
+    return "Completa los campos obligatorios antes de publicar el perfil.";
+  }
+
   if (error instanceof Error) {
     return error.message;
   }
 
   return fallbackMessage;
+}
+
+function getReadinessFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    display_name: "Nombre visible",
+    emergency_contact_name: "Nombre del contacto de emergencia",
+    emergency_contact_relationship: "Relacion del contacto de emergencia",
+    emergency_contact_phone: "Telefono del contacto de emergencia",
+    medical_conditions_decision: "Declarar condiciones medicas o marcar que no hay",
+    allergies_decision: "Declarar alergias o marcar que no hay",
+    medications_decision: "Declarar medicamentos o marcar que no hay",
+    public_consent: "Consentimiento de publicacion",
+    public_consent_version: "Version vigente del consentimiento",
+  };
+
+  return labels[field] ?? field;
+}
+
+function getReadinessBlockingReasonLabel(reason: string): string {
+  const labels: Record<string, string> = {
+    device_missing: "Identificador no disponible.",
+    device_not_active: "El identificador debe estar activo.",
+    device_deleted: "El identificador no esta operativo.",
+    profile_missing: "Aun no existe perfil de emergencia.",
+    profile_deleted: "El perfil de emergencia no esta operativo.",
+    consent_missing: "Falta aceptar el consentimiento publico.",
+    consent_version_outdated: "El consentimiento debe actualizarse a la version vigente.",
+  };
+
+  return labels[reason] ?? reason;
+}
+
+function getReadinessStatusLabel(readiness: EmergencyProfileReadiness | null): string {
+  if (!readiness) {
+    return "Consultando perfil";
+  }
+
+  if (readiness.is_public_operational) {
+    return "ProtegID operativo";
+  }
+
+  if (readiness.can_publish) {
+    return "Perfil listo para publicar";
+  }
+
+  return "Perfil incompleto";
+}
+
+function getReadinessStatusClass(readiness: EmergencyProfileReadiness | null): string {
+  if (readiness?.is_public_operational) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+
+  if (readiness?.can_publish) {
+    return "border-sky-200 bg-sky-50 text-sky-800";
+  }
+
+  return "border-amber-200 bg-amber-50 text-amber-900";
+}
+
+function isConsentAccepted(form: ProfileFormState, readiness: EmergencyProfileReadiness | null): boolean {
+  return Boolean(
+    form.public_consent_accepted_at &&
+      form.public_consent_version &&
+      (!readiness || form.public_consent_version === readiness.consent_version),
+  );
 }
 
 function getQrGenerationErrorMessage(error: unknown): string {
@@ -259,7 +365,12 @@ function createEmptyProfileForm(): ProfileFormState {
     emergency_contact_phone: "",
     emergency_contact_relationship: "",
     notes: "",
-    is_public: true,
+    is_public: false,
+    medical_conditions_none: false,
+    allergies_none: false,
+    medications_none: false,
+    public_consent_accepted_at: null,
+    public_consent_version: null,
   };
 }
 
@@ -275,6 +386,11 @@ function createProfileForm(profile: EmergencyProfile): ProfileFormState {
     emergency_contact_relationship: profile.emergency_contact_relationship ?? "",
     notes: profile.notes ?? "",
     is_public: profile.is_public,
+    medical_conditions_none: profile.medical_conditions_none,
+    allergies_none: profile.allergies_none,
+    medications_none: profile.medications_none,
+    public_consent_accepted_at: profile.public_consent_accepted_at,
+    public_consent_version: profile.public_consent_version,
   };
 }
 
@@ -287,14 +403,19 @@ function createProfilePayload(form: ProfileFormState): EmergencyProfileInput {
   return {
     display_name: normalizeProfileValue(form.display_name),
     blood_type: normalizeProfileValue(form.blood_type),
-    allergies: normalizeProfileValue(form.allergies),
-    medical_conditions: normalizeProfileValue(form.medical_conditions),
-    medications: normalizeProfileValue(form.medications),
+    allergies: form.allergies_none ? null : normalizeProfileValue(form.allergies),
+    medical_conditions: form.medical_conditions_none ? null : normalizeProfileValue(form.medical_conditions),
+    medications: form.medications_none ? null : normalizeProfileValue(form.medications),
     emergency_contact_name: normalizeProfileValue(form.emergency_contact_name),
     emergency_contact_phone: normalizeProfileValue(form.emergency_contact_phone),
     emergency_contact_relationship: normalizeProfileValue(form.emergency_contact_relationship),
     notes: normalizeProfileValue(form.notes),
     is_public: form.is_public,
+    medical_conditions_none: form.medical_conditions_none,
+    allergies_none: form.allergies_none,
+    medications_none: form.medications_none,
+    public_consent_accepted_at: form.public_consent_accepted_at,
+    public_consent_version: form.public_consent_version,
   };
 }
 
@@ -390,6 +511,7 @@ function DashboardContent() {
   const [activationPublicId, setActivationPublicId] = useState("");
   const [activationClaimCode, setActivationClaimCode] = useState("");
   const [profileForm, setProfileForm] = useState<ProfileFormState>(() => createEmptyProfileForm());
+  const [profileReadiness, setProfileReadiness] = useState<EmergencyProfileReadiness | null>(null);
   const [hasExistingProfile, setHasExistingProfile] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
@@ -403,6 +525,7 @@ function DashboardContent() {
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [isActivatingDevice, setIsActivatingDevice] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isLoadingProfileReadiness, setIsLoadingProfileReadiness] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const currentUserIsAdmin = isAdminUser(currentUser);
   const qrPermissionMessage = currentUserIsAdmin ? qrAdminMessage : null;
@@ -439,10 +562,12 @@ function DashboardContent() {
   function resetProfileEditor() {
     setSelectedDevice(null);
     setProfileForm(createEmptyProfileForm());
+    setProfileReadiness(null);
     setHasExistingProfile(null);
     setProfileErrorMessage(null);
     setProfileSuccessMessage(null);
     setIsLoadingProfile(false);
+    setIsLoadingProfileReadiness(false);
     setIsSavingProfile(false);
   }
 
@@ -467,6 +592,35 @@ function DashboardContent() {
     setProfileForm((currentForm) => ({
       ...currentForm,
       [name]: value,
+    }));
+  }
+
+  function updateProfileDecisionField(name: ProfileDecisionFieldName, checked: boolean) {
+    setProfileForm((currentForm) => {
+      const nextForm = { ...currentForm, [name]: checked };
+
+      if (checked && name === "medical_conditions_none") {
+        nextForm.medical_conditions = "";
+      }
+
+      if (checked && name === "allergies_none") {
+        nextForm.allergies = "";
+      }
+
+      if (checked && name === "medications_none") {
+        nextForm.medications = "";
+      }
+
+      return nextForm;
+    });
+  }
+
+  function updateConsentAccepted(checked: boolean) {
+    setProfileForm((currentForm) => ({
+      ...currentForm,
+      is_public: checked ? currentForm.is_public : false,
+      public_consent_accepted_at: checked ? new Date().toISOString() : null,
+      public_consent_version: checked ? profileReadiness?.consent_version ?? currentForm.public_consent_version : null,
     }));
   }
 
@@ -859,6 +1013,7 @@ function DashboardContent() {
     const token = accessToken.trim();
     setSelectedDevice(device);
     setProfileForm(createEmptyProfileForm());
+    setProfileReadiness(null);
     setHasExistingProfile(null);
     setProfileErrorMessage(null);
     setProfileSuccessMessage(null);
@@ -869,9 +1024,15 @@ function DashboardContent() {
     }
 
     setIsLoadingProfile(true);
+    setIsLoadingProfileReadiness(true);
 
     try {
-      const profile = await getEmergencyProfile(device.id, token);
+      const [profile, readiness] = await Promise.all([
+        getEmergencyProfile(device.id, token),
+        getEmergencyProfileReadiness(device.id, token),
+      ]);
+
+      setProfileReadiness(readiness);
 
       if (profile === null) {
         setHasExistingProfile(false);
@@ -885,6 +1046,7 @@ function DashboardContent() {
       setProfileErrorMessage(getProfileErrorMessage(error, "No se pudo cargar el perfil de emergencia."));
     } finally {
       setIsLoadingProfile(false);
+      setIsLoadingProfileReadiness(false);
     }
   }
 
@@ -909,15 +1071,27 @@ function DashboardContent() {
 
     try {
       const savedProfile = await upsertEmergencyProfile(selectedDevice.id, createProfilePayload(profileForm), token);
+      const readiness = await getEmergencyProfileReadiness(selectedDevice.id, token);
       setProfileForm(createProfileForm(savedProfile));
+      setProfileReadiness(readiness);
       setHasExistingProfile(true);
-      setProfileSuccessMessage("Perfil de emergencia guardado correctamente.");
+      setProfileSuccessMessage(
+        readiness.is_public_operational
+          ? "ProtegID operativo: el QR/NFC ya puede mostrar tu ficha pública de emergencia."
+          : "Perfil de emergencia guardado correctamente.",
+      );
     } catch (error) {
       setProfileErrorMessage(getProfileErrorMessage(error, "No se pudo guardar el perfil de emergencia."));
     } finally {
       setIsSavingProfile(false);
     }
   }
+
+  const readinessCompletedCount = profileReadiness
+    ? profileReadiness.required_fields.length - profileReadiness.missing_fields.length
+    : 0;
+  const readinessRequiredCount = profileReadiness?.required_fields.length ?? 0;
+  const profileConsentAccepted = isConsentAccepted(profileForm, profileReadiness);
 
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-950 sm:px-6 lg:py-12">
@@ -1179,13 +1353,7 @@ function DashboardContent() {
                     !qrStatusState.hasError &&
                     !qrStatusState.status?.exists;
                   const profileVisibilityLabel = isSelectedDevice
-                    ? hasExistingProfile === null
-                      ? "Consultando perfil"
-                      : hasExistingProfile
-                        ? profileForm.is_public
-                          ? "Perfil público habilitado"
-                          : "Perfil no público"
-                        : "Perfil pendiente"
+                    ? getReadinessStatusLabel(profileReadiness)
                     : "Selecciona Editar perfil para revisar";
 
                   return (
@@ -1383,6 +1551,72 @@ function DashboardContent() {
               </p>
             ) : null}
 
+            <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5" aria-labelledby="profile-readiness-title">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">Preparacion operacional</p>
+                  <h3 className="mt-2 text-xl font-bold tracking-tight" id="profile-readiness-title">
+                    Estado del perfil publico
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    El backend decide si el perfil puede publicarse. Esta tarjeta solo muestra el avance para completarlo.
+                  </p>
+                </div>
+                <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getReadinessStatusClass(profileReadiness)}`}>
+                  {isLoadingProfileReadiness ? "Consultando perfil" : getReadinessStatusLabel(profileReadiness)}
+                </span>
+              </div>
+
+              {profileReadiness ? (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
+                      <span>Campos obligatorios</span>
+                      <span>{readinessCompletedCount}/{readinessRequiredCount}</span>
+                    </div>
+                    <div className="mt-2 h-3 overflow-hidden rounded-full bg-white ring-1 ring-slate-200">
+                      <div
+                        className="h-full rounded-full bg-sky-600 transition-all"
+                        style={{ width: `${readinessRequiredCount > 0 ? (readinessCompletedCount / readinessRequiredCount) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {profileReadiness.is_public_operational ? (
+                    <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                      ProtegID operativo: el QR/NFC ya puede mostrar tu ficha publica de emergencia.
+                    </p>
+                  ) : null}
+
+                  {profileReadiness.missing_fields.length > 0 ? (
+                    <div className="rounded-2xl border border-amber-200 bg-white p-4">
+                      <h4 className="text-sm font-semibold text-amber-950">Campos faltantes</h4>
+                      <ul className="mt-3 space-y-2 text-sm text-amber-900">
+                        {profileReadiness.missing_fields.map((field) => (
+                          <li key={field}>{getReadinessFieldLabel(field)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {profileReadiness.blocking_reasons.length > 0 ? (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h4 className="text-sm font-semibold text-slate-950">Bloqueos actuales</h4>
+                      <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                        {profileReadiness.blocking_reasons.map((reason) => (
+                          <li key={reason}>{getReadinessBlockingReasonLabel(reason)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-4 rounded-2xl border border-sky-100 bg-white px-4 py-3 text-sm text-sky-800">
+                  {isLoadingProfileReadiness ? "Consultando estado de readiness..." : "Selecciona o recarga el perfil para consultar readiness."}
+                </p>
+              )}
+            </section>
+
             <form className="mt-6 space-y-5" onSubmit={handleSaveProfile}>
               {PROFILE_FIELD_GROUPS.map((group) => (
                 <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5" key={group.title}>
@@ -1396,7 +1630,7 @@ function DashboardContent() {
                         {field.multiline ? (
                           <textarea
                             className="mt-2 min-h-28 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            disabled={isLoadingProfile || isSavingProfile}
+                            disabled={isLoadingProfile || isSavingProfile || (field.noneField ? profileForm[field.noneField] : false)}
                             id={`profile-${field.name}`}
                             onChange={(event) => updateProfileTextField(field.name, event.target.value)}
                             value={profileForm[field.name]}
@@ -1404,13 +1638,25 @@ function DashboardContent() {
                         ) : (
                           <input
                             className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            disabled={isLoadingProfile || isSavingProfile}
+                            disabled={isLoadingProfile || isSavingProfile || (field.noneField ? profileForm[field.noneField] : false)}
                             id={`profile-${field.name}`}
                             onChange={(event) => updateProfileTextField(field.name, event.target.value)}
                             type="text"
                             value={profileForm[field.name]}
                           />
                         )}
+                        {field.noneField && field.noneLabel ? (
+                          <label className="mt-3 flex gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                            <input
+                              checked={profileForm[field.noneField]}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
+                              disabled={isLoadingProfile || isSavingProfile}
+                              onChange={(event) => updateProfileDecisionField(field.noneField as ProfileDecisionFieldName, event.target.checked)}
+                              type="checkbox"
+                            />
+                            <span>{field.noneLabel}</span>
+                          </label>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -1418,7 +1664,26 @@ function DashboardContent() {
               ))}
 
               <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
-                <h3 className="text-base font-semibold text-slate-950">Visibilidad pública</h3>
+                <h3 className="text-base font-semibold text-slate-950">Consentimiento y visibilidad publica</h3>
+                <label className="mt-4 flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                  <input
+                    checked={profileConsentAccepted}
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
+                    disabled={isLoadingProfile || isSavingProfile || !profileReadiness}
+                    onChange={(event) => updateConsentAccepted(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>
+                    <span className="block font-semibold text-slate-950">Acepto la publicacion de mi ficha de emergencia</span>
+                    <span className="mt-1 block text-slate-600">
+                      Acepto que ProtegID muestre publicamente mi informacion de emergencia al escanear el QR/NFC de mi identificador fisico.
+                    </span>
+                    {profileReadiness ? (
+                      <span className="mt-2 block text-xs text-slate-500">Version de consentimiento: {profileReadiness.consent_version}</span>
+                    ) : null}
+                  </span>
+                </label>
+
                 <label className="mt-4 flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                   <input
                     checked={profileForm.is_public}
@@ -1433,10 +1698,15 @@ function DashboardContent() {
                     type="checkbox"
                   />
                   <span>
-                    <span className="block font-semibold text-slate-950">Perfil público habilitado</span>
+                    <span className="block font-semibold text-slate-950">Habilitar perfil publico</span>
                     <span className="mt-1 block text-slate-600">
-                      Controla si este perfil se muestra en /p/{selectedDevice.public_id}.
+                      Controla si este perfil se muestra en /p/{selectedDevice.public_id}. El backend solo lo publicara si cumple los minimos y el consentimiento vigente.
                     </span>
+                    {profileReadiness && !profileReadiness.can_publish ? (
+                      <span className="mt-2 block text-xs font-medium text-amber-700">
+                        El perfil aun no esta listo para publicarse. Puedes guardar avances sin habilitarlo.
+                      </span>
+                    ) : null}
                   </span>
                 </label>
               </section>
