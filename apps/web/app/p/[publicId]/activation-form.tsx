@@ -12,6 +12,10 @@ type ActivationFormProps = {
 };
 
 export function ActivationForm({ publicId }: ActivationFormProps) {
+  const activationPath = `/p/${publicId}`;
+  const loginHref = `/login?returnTo=${activationPath}`;
+  const registerHref = `/register?returnTo=${activationPath}`;
+  const dashboardHref = `/dashboard?publicId=${encodeURIComponent(publicId)}`;
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [claimCode, setClaimCode] = useState("");
@@ -45,7 +49,7 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
 
     try {
       await activateDeviceWithClaimCode(publicId, submittedClaimCode, accessToken);
-      setSuccessMessage("Identificador activado correctamente.");
+      setSuccessMessage("Identificador vinculado correctamente.");
     } catch (error) {
       if (error instanceof ApiRequestError) {
         setErrorMessage(error.message);
@@ -67,24 +71,24 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
         <div>
           <p className="font-semibold text-slate-950">Inicia sesión para activar este identificador.</p>
           <p className="mt-1 text-sm leading-6 text-slate-600">
-            Después de iniciar sesión, vuelve a escanear el QR/NFC o regresa a esta URL para ingresar el código de
-            activación.
+            Después de iniciar sesión o crear una cuenta, vuelve a esta URL para ingresar el código de activación
+            incluido dentro del empaque.
           </p>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
           <Link
             className="inline-flex items-center justify-center rounded-full bg-red-700 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-offset-2"
-            href="/login"
+            href={loginHref}
           >
             Iniciar sesión
           </Link>
-          <span
-            aria-disabled="true"
-            className="inline-flex cursor-not-allowed items-center justify-center rounded-full border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-bold text-slate-500"
+          <Link
+            className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 shadow-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+            href={registerHref}
           >
-            Crear cuenta próximamente
-          </span>
+            Crear cuenta
+          </Link>
         </div>
       </div>
     );
@@ -94,11 +98,14 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
     return (
       <div className="space-y-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
         <p className="font-semibold text-emerald-950">{successMessage}</p>
+        <p className="text-sm leading-6 text-emerald-900">
+          Ahora completa tu perfil de emergencia para que el QR/NFC pueda mostrar información útil cuando sea necesario.
+        </p>
         <Link
           className="inline-flex items-center justify-center rounded-full bg-emerald-700 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-700 focus:ring-offset-2"
-          href="/dashboard"
+          href={dashboardHref}
         >
-          Ir al dashboard
+          Completar perfil de emergencia
         </Link>
       </div>
     );

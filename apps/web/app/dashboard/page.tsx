@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
@@ -203,22 +204,6 @@ function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrS
   );
 }
 
-function createUnavailableQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
-  return Object.fromEntries(
-    devices.map<[string, DeviceQrStatusState]>((device) => [
-      device.id,
-      {
-        isLoading: false,
-        isGenerating: false,
-        isDownloading: false,
-        status: null,
-        hasError: true,
-        actionMessage: null,
-      },
-    ]),
-  );
-}
-
 function getQrStatusLabel(qrStatusState: DeviceQrStatusState | undefined): string {
   if (qrStatusState?.isGenerating) {
     return "Generando QR...";
@@ -352,7 +337,7 @@ function getDeviceStatusDescription(status: Device["status"]): string {
   }
 
   if (status === "active") {
-    return "Este identificador está activo y puede usarse con perfil público y QR.";
+    return "Este identificador está vinculado a tu cuenta. Completa y publica el perfil para que sea útil al escanearlo.";
   }
 
   if (status === "disabled") {
@@ -364,7 +349,7 @@ function getDeviceStatusDescription(status: Device["status"]): string {
 
 function getDeviceStatusWarning(status: Device["status"]): string | null {
   if (status === "pending_activation") {
-    return "Debe activarse antes de operar con perfil público o QR.";
+    return "Debe activarse antes de operar con perfil público.";
   }
 
   if (status === "disabled" || status === "lost") {
@@ -394,7 +379,9 @@ function getDeviceStatusClass(status: Device["status"]): string {
   return "border-amber-200 bg-amber-50 text-amber-900";
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
+  const searchParams = useSearchParams();
+  const requestedPublicId = searchParams.get("publicId")?.trim() ?? "";
   const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -417,8 +404,9 @@ export default function DashboardPage() {
   const [isActivatingDevice, setIsActivatingDevice] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const qrPermissionMessage = currentUser && !isAdminUser(currentUser) ? "La gestión de QR requiere rol admin." : qrAdminMessage;
-  const canManageQr = currentUser !== null && isAdminUser(currentUser) && qrPermissionMessage === null;
+  const currentUserIsAdmin = isAdminUser(currentUser);
+  const qrPermissionMessage = currentUserIsAdmin ? qrAdminMessage : null;
+  const canManageQr = currentUserIsAdmin && qrPermissionMessage === null;
 
   useEffect(() => {
     const storedToken = getSessionToken();
@@ -433,6 +421,20 @@ export default function DashboardPage() {
       updateTokenInput: true,
     }).finally(() => setHasCheckedStoredSession(true));
   }, []);
+
+  useEffect(() => {
+    if (!requestedPublicId || !currentUser || isLoadingDevices || selectedDevice) {
+      return;
+    }
+
+    const matchingDevice = devices.find(
+      (device) => device.public_id.toLowerCase() === requestedPublicId.toLowerCase(),
+    );
+
+    if (matchingDevice) {
+      void handleEditProfile(matchingDevice);
+    }
+  }, [currentUser, devices, isLoadingDevices, requestedPublicId, selectedDevice]);
 
   function resetProfileEditor() {
     setSelectedDevice(null);
@@ -512,7 +514,7 @@ export default function DashboardPage() {
       if (isAdminUser(validatedUser)) {
         void loadDeviceQrStatuses(userDevices, token);
       } else {
-        setQrStatusByDeviceId(createUnavailableQrStatusState(userDevices));
+        setQrStatusByDeviceId({});
       }
     } catch (error) {
       setDeviceErrorMessage(getDevicesErrorMessage(error));
@@ -823,7 +825,7 @@ export default function DashboardPage() {
     try {
       await activateDeviceWithClaimCode(publicId, claimCode, token);
       setActivationPublicId("");
-      setActivationSuccessMessage("Identificador activado correctamente.");
+      setActivationSuccessMessage("Identificador vinculado correctamente. Completa el perfil de emergencia para que sea útil al escanearlo.");
 
       try {
         const userDevices = await getMyDevices(token);
@@ -832,7 +834,7 @@ export default function DashboardPage() {
         if (isAdminUser(currentUser)) {
           void loadDeviceQrStatuses(userDevices, token);
         } else {
-          setQrStatusByDeviceId(createUnavailableQrStatusState(userDevices));
+          setQrStatusByDeviceId({});
         }
       } catch (error) {
         setDeviceErrorMessage(getDevicesErrorMessage(error));
@@ -1176,14 +1178,23 @@ export default function DashboardPage() {
                     !qrStatusState.isLoading &&
                     !qrStatusState.hasError &&
                     !qrStatusState.status?.exists;
+                  const profileVisibilityLabel = isSelectedDevice
+                    ? hasExistingProfile === null
+                      ? "Consultando perfil"
+                      : hasExistingProfile
+                        ? profileForm.is_public
+                          ? "Perfil público habilitado"
+                          : "Perfil no público"
+                        : "Perfil pendiente"
+                    : "Selecciona Editar perfil para revisar";
 
                   return (
-                  <article
-                    className={`rounded-2xl border p-4 transition ${
-                      isSelectedDevice ? "border-sky-300 bg-sky-50 shadow-sm" : "border-slate-200 bg-slate-50"
-                    }`}
-                    key={device.id}
-                  >
+                    <article
+                      className={`rounded-2xl border p-4 transition ${
+                        isSelectedDevice ? "border-sky-300 bg-sky-50 shadow-sm" : "border-slate-200 bg-slate-50"
+                      }`}
+                      key={device.id}
+                    >
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <h3 className="text-lg font-semibold text-slate-950">
@@ -1225,64 +1236,85 @@ export default function DashboardPage() {
                       </div>
                     </dl>
 
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <h4 className="text-sm font-semibold text-slate-950">Gestión QR</h4>
-                          <p className="mt-1 text-sm leading-6 text-slate-600">
-                            Apunta al perfil público <span className="font-mono text-slate-800">/p/{device.public_id}</span>.
-                          </p>
-                        </div>
-                        <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getQrStatusClass(qrStatusState)}`}>
-                          {getQrStatusLabel(qrStatusState)}
-                        </span>
-                      </div>
-
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-                        <p>El QR solo contiene la URL pública del perfil. No incluye datos médicos embebidos.</p>
-                        <p className="mt-1">La visualización depende de que el perfil esté marcado como público.</p>
-                      </div>
-
-                      {qrStatusState?.status?.object_key ? (
-                        <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                          <summary className="cursor-pointer font-medium text-slate-700">Detalle técnico</summary>
-                          <p className="mt-2 break-all font-mono text-slate-500">{qrStatusState.status.object_key}</p>
-                        </details>
-                      ) : null}
-
-                      {qrStatusState?.actionMessage ? (
-                        <p className={`mt-3 rounded-xl border px-3 py-2 text-sm ${getQrActionMessageClass(qrStatusState.actionMessage)}`}>
-                          {qrStatusState.actionMessage.text}
+                    {!currentUserIsAdmin ? (
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                        <h4 className="text-sm font-semibold text-slate-950">Información del identificador</h4>
+                        <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                          <div>
+                            <dt className="font-medium text-slate-500">Public ID</dt>
+                            <dd className="mt-1 break-all font-mono text-slate-950">{device.public_id}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-slate-500">Perfil público</dt>
+                            <dd className="mt-1 text-slate-950">{profileVisibilityLabel}</dd>
+                          </div>
+                        </dl>
+                        <p className="mt-3 text-xs leading-5 text-slate-500">
+                          Completa el perfil y activa su visibilidad pública para que el QR/NFC muestre información útil.
                         </p>
-                      ) : null}
-
-                      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                        <Button
-                          className="w-full sm:w-auto"
-                          disabled={isQrActionDisabled}
-                          onClick={() => void handleGenerateDeviceQr(device)}
-                          type="button"
-                          variant="outline"
-                        >
-                          {qrActionButtonLabel}
-                        </Button>
-                        <Button
-                          className="w-full sm:w-auto"
-                          disabled={isQrDownloadDisabled}
-                          onClick={() => void handleDownloadDeviceQr(device)}
-                          type="button"
-                          variant="outline"
-                        >
-                          {qrDownloadButtonLabel}
-                        </Button>
                       </div>
-                      {shouldShowQrDownloadHelp ? (
-                        <p className="mt-2 text-xs text-slate-500">Genera el QR antes de descargarlo.</p>
-                      ) : null}
-                      <p className="mt-2 text-xs leading-5 text-slate-500">
-                        La descarga obtiene el PNG desde el backend autenticado. No se expone URL pública de MinIO.
-                      </p>
-                    </div>
+                    ) : null}
+
+                    {currentUserIsAdmin ? (
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <h4 className="text-sm font-semibold text-slate-950">Gestión QR</h4>
+                            <p className="mt-1 text-sm leading-6 text-slate-600">
+                              Apunta al perfil público <span className="font-mono text-slate-800">/p/{device.public_id}</span>.
+                            </p>
+                          </div>
+                          <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getQrStatusClass(qrStatusState)}`}>
+                            {getQrStatusLabel(qrStatusState)}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                          <p>El QR solo contiene la URL pública del perfil. No incluye datos médicos embebidos.</p>
+                          <p className="mt-1">La visualización depende de que el perfil esté marcado como público.</p>
+                        </div>
+
+                        {qrStatusState?.status?.object_key ? (
+                          <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            <summary className="cursor-pointer font-medium text-slate-700">Detalle técnico</summary>
+                            <p className="mt-2 break-all font-mono text-slate-500">{qrStatusState.status.object_key}</p>
+                          </details>
+                        ) : null}
+
+                        {qrStatusState?.actionMessage ? (
+                          <p className={`mt-3 rounded-xl border px-3 py-2 text-sm ${getQrActionMessageClass(qrStatusState.actionMessage)}`}>
+                            {qrStatusState.actionMessage.text}
+                          </p>
+                        ) : null}
+
+                        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                          <Button
+                            className="w-full sm:w-auto"
+                            disabled={isQrActionDisabled}
+                            onClick={() => void handleGenerateDeviceQr(device)}
+                            type="button"
+                            variant="outline"
+                          >
+                            {qrActionButtonLabel}
+                          </Button>
+                          <Button
+                            className="w-full sm:w-auto"
+                            disabled={isQrDownloadDisabled}
+                            onClick={() => void handleDownloadDeviceQr(device)}
+                            type="button"
+                            variant="outline"
+                          >
+                            {qrDownloadButtonLabel}
+                          </Button>
+                        </div>
+                        {shouldShowQrDownloadHelp ? (
+                          <p className="mt-2 text-xs text-slate-500">Genera el QR antes de descargarlo.</p>
+                        ) : null}
+                        <p className="mt-2 text-xs leading-5 text-slate-500">
+                          La descarga obtiene el PNG desde el backend autenticado. No se expone URL pública de MinIO.
+                        </p>
+                      </div>
+                    ) : null}
 
                     <div className="mt-5">
                       <Button
@@ -1295,7 +1327,7 @@ export default function DashboardPage() {
                         {isSelectedDevice ? "Editando perfil" : "Editar perfil"}
                       </Button>
                     </div>
-                  </article>
+                    </article>
                   );
                 })}
               </div>
@@ -1417,5 +1449,13 @@ export default function DashboardPage() {
         ) : null}
       </section>
     </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardContent />
+    </Suspense>
   );
 }

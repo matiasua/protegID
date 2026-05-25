@@ -16,9 +16,29 @@ function getRegisterErrorMessage(error: unknown): string {
   return "No se pudo crear la cuenta.";
 }
 
+function getSafeReturnTo(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  const lowerValue = trimmedValue.toLowerCase();
+
+  if (
+    !trimmedValue.startsWith("/") ||
+    trimmedValue.startsWith("//") ||
+    lowerValue.startsWith("http://") ||
+    lowerValue.startsWith("https://")
+  ) {
+    return null;
+  }
+
+  return trimmedValue;
+}
+
 function RegisterContent() {
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get("returnTo");
+  const returnTo = getSafeReturnTo(searchParams.get("returnTo"));
   const loginHref = returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login";
 
   const [fullName, setFullName] = useState("");
