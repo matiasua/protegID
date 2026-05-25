@@ -17,18 +17,19 @@ def get_profile_by_device_id(
     return session.scalar(statement)
 
 
-def get_profile_by_public_id(session: Session, public_id: str) -> EmergencyProfile | None:
+def get_profile_candidate_by_public_id(
+    session: Session, public_id: str
+) -> tuple[Device, EmergencyProfile | None] | None:
     statement = (
-        select(EmergencyProfile)
-        .join(Device, EmergencyProfile.device_id == Device.id)
-        .where(
-            Device.public_id == public_id,
-            Device.status == "active",
-            EmergencyProfile.is_public.is_(True),
-            EmergencyProfile.deleted_at.is_(None),
-        )
+        select(Device, EmergencyProfile)
+        .outerjoin(EmergencyProfile, EmergencyProfile.device_id == Device.id)
+        .where(Device.public_id == public_id)
     )
-    return session.scalar(statement)
+    row = session.execute(statement).one_or_none()
+    if row is None:
+        return None
+
+    return row[0], row[1]
 
 
 def create_profile(

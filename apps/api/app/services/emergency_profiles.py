@@ -8,7 +8,7 @@ from app.models import Device, EmergencyProfile
 from app.repositories.emergency_profiles import (
     create_profile,
     get_profile_by_device_id,
-    get_profile_by_public_id,
+    get_profile_candidate_by_public_id,
     update_profile,
 )
 from app.schemas.emergency_profile import (
@@ -151,8 +151,16 @@ def create_or_update_profile_for_device(
 def get_public_profile_by_public_id(
     session: Session, public_id: str
 ) -> EmergencyProfilePublicRead | None:
-    profile = get_profile_by_public_id(session, public_id)
+    candidate = get_profile_candidate_by_public_id(session, public_id)
+    if candidate is None:
+        return None
+
+    device, profile = candidate
     if profile is None:
+        return None
+
+    readiness = calculate_profile_readiness(device, profile)
+    if not readiness.is_public_operational:
         return None
 
     return EmergencyProfilePublicRead.model_validate(profile)
