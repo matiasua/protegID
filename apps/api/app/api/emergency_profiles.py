@@ -10,7 +10,10 @@ from app.models import Device, User
 from app.repositories.devices import get_device_by_id
 from app.repositories.emergency_profiles import get_profile_by_device_id
 from app.schemas.emergency_profile import EmergencyProfileRead, EmergencyProfileUpdate
-from app.services.emergency_profiles import create_or_update_profile_for_device
+from app.services.emergency_profiles import (
+    ProfileConsistencyError,
+    create_or_update_profile_for_device,
+)
 
 router = APIRouter(tags=["emergency-profiles"])
 
@@ -59,8 +62,14 @@ def put_device_emergency_profile(
     current_user: CurrentUserDep,
 ):
     _get_owned_device(session, current_user, device_id)
-    return create_or_update_profile_for_device(
-        session,
-        device_id=device_id,
-        profile_data=payload,
-    )
+    try:
+        return create_or_update_profile_for_device(
+            session,
+            device_id=device_id,
+            profile_data=payload,
+        )
+    except ProfileConsistencyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error

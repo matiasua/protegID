@@ -1,5 +1,6 @@
 """Repositorio de perfiles de emergencia."""
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -43,7 +44,12 @@ def create_profile(
     emergency_contact_phone: str | None = None,
     emergency_contact_relationship: str | None = None,
     notes: str | None = None,
-    is_public: bool = True,
+    is_public: bool = False,
+    medical_conditions_none: bool = False,
+    allergies_none: bool = False,
+    medications_none: bool = False,
+    public_consent_accepted_at: datetime | None = None,
+    public_consent_version: str | None = None,
 ) -> EmergencyProfile:
     profile = EmergencyProfile(
         device_id=device_id,
@@ -57,6 +63,11 @@ def create_profile(
         emergency_contact_relationship=emergency_contact_relationship,
         notes=notes,
         is_public=is_public,
+        medical_conditions_none=medical_conditions_none,
+        allergies_none=allergies_none,
+        medications_none=medications_none,
+        public_consent_accepted_at=public_consent_accepted_at,
+        public_consent_version=public_consent_version,
     )
     session.add(profile)
     session.commit()
