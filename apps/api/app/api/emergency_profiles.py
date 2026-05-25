@@ -9,11 +9,16 @@ from app.api.dependencies import CurrentUserDep, SessionDep
 from app.models import Device, User
 from app.repositories.devices import get_device_by_id
 from app.repositories.emergency_profiles import get_profile_by_device_id
-from app.schemas.emergency_profile import EmergencyProfileRead, EmergencyProfileUpdate
+from app.schemas.emergency_profile import (
+    EmergencyProfileRead,
+    EmergencyProfileReadinessRead,
+    EmergencyProfileUpdate,
+)
 from app.services.emergency_profiles import (
     ProfileConsistencyError,
     create_or_update_profile_for_device,
 )
+from app.services.profile_readiness import calculate_profile_readiness
 
 router = APIRouter(tags=["emergency-profiles"])
 
@@ -49,6 +54,20 @@ def get_device_emergency_profile(
         )
 
     return profile
+
+
+@router.get(
+    "/api/devices/{device_id}/emergency-profile/readiness",
+    response_model=EmergencyProfileReadinessRead,
+)
+def get_device_emergency_profile_readiness(
+    device_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+):
+    device = _get_owned_device(session, current_user, device_id)
+    profile = get_profile_by_device_id(session, device_id)
+    return calculate_profile_readiness(device, profile)
 
 
 @router.put(
