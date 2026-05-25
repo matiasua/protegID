@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { type FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
@@ -17,7 +18,29 @@ function getLoginErrorMessage(error: unknown): string {
   return "No se pudo iniciar sesión. Intenta nuevamente.";
 }
 
-export default function LoginPage() {
+function getSafeReturnTo(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  const lowerValue = trimmedValue.toLowerCase();
+
+  if (
+    !trimmedValue.startsWith("/") ||
+    trimmedValue.startsWith("//") ||
+    lowerValue.startsWith("http://") ||
+    lowerValue.startsWith("https://")
+  ) {
+    return null;
+  }
+
+  return trimmedValue;
+}
+
+function LoginContent() {
+  const searchParams = useSearchParams();
+  const returnTo = getSafeReturnTo(searchParams.get("returnTo"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginResponse, setLoginResponse] = useState<LoginResponse | null>(null);
@@ -163,9 +186,16 @@ export default function LoginPage() {
                       Token type: <span className="font-mono">{loginResponse.token_type}</span>
                     </p>
                   </div>
-                  <Button asChild className="w-full sm:w-auto">
-                    <Link href="/dashboard">Continuar al dashboard</Link>
-                  </Button>
+                  <div className="flex w-full flex-col gap-3 sm:w-auto">
+                    {returnTo ? (
+                      <Button asChild className="w-full sm:w-auto">
+                        <Link href={returnTo}>Continuar activación</Link>
+                      </Button>
+                    ) : null}
+                    <Button asChild className="w-full sm:w-auto">
+                      <Link href="/dashboard">Continuar al dashboard</Link>
+                    </Button>
+                  </div>
                 </div>
 
                 <label className="mt-4 block font-medium" htmlFor="access-token">
@@ -186,5 +216,13 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }

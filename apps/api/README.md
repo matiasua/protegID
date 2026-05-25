@@ -37,7 +37,18 @@ Variables usadas para construir URLs publicas de QR:
 
 `password_hash` no se expone en respuestas. Passwords y tokens no deben loguearse.
 
-No hay refresh token, recuperacion de password ni MFA.
+Registro publico Sprint 16:
+
+- `POST /api/auth/register` recibe `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`.
+- Devuelve `UserRead`, no devuelve token y no inicia sesion automaticamente.
+- Fuerza `role=user`; no permite registrar admin desde el endpoint publico.
+- El email se normaliza con `strip().lower()` en registro y login/autenticacion.
+- La busqueda por email es case-insensitive.
+- Registro duplicado con casing distinto responde `409`.
+- Se captura `IntegrityError` con rollback.
+- `password_hash` no se expone y passwords no deben loguearse.
+
+No hay refresh token, recuperacion de password, email verification ni MFA.
 
 ## Device Foundation
 
@@ -223,9 +234,9 @@ El frontend publico existe en `/p/{public_id}` y soporta onboarding de primer es
 - Incluye enlace discreto `ProtegID` hacia `/`.
 - El not-found publico mantiene `404` real, permite volver al inicio y no revela si el `public_id` existe.
 - El onboarding indica que el identificador fisico aun no esta vinculado, que el `claim_code` viene dentro del empaque fisico y que el QR/NFC solo contiene la URL publica permanente.
-- Muestra `public_id` como referencia tecnica discreta, CTA `Iniciar sesión` y `Crear cuenta próximamente`.
+- Muestra `public_id` como referencia tecnica discreta, CTA `Iniciar sesión` hacia `/login?returnTo=/p/{public_id}` y CTA `Crear cuenta` hacia `/register?returnTo=/p/{public_id}`.
 - `apps/web/app/p/[publicId]/activation-form.tsx` usa `getSessionToken()`; sin sesion muestra CTA login y con sesion permite ingresar `claim_code`.
-- El formulario llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)` y en exito muestra `Identificador activado correctamente.` con CTA `Ir al dashboard`.
+- El formulario llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)` y en exito muestra `Identificador vinculado correctamente.` con CTA `Completar perfil de emergencia` hacia `/dashboard?publicId={public_id}`.
 
 ## Integracion con frontend privado
 
@@ -233,6 +244,10 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activaci
 
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
+- `/register` permite crear cuenta con Nombre, Email y Password, consume `POST /api/auth/register`, envia `full_name`, no guarda token, no usa storage y no inicia sesion automaticamente.
+- `/register` muestra `Ya existe una cuenta con este correo.` ante `409` y limpia password tras registro exitoso.
+- `/register` y `/login` soportan `returnTo` sanitizado: solo rutas internas que empiezan con `/`, rechazan `//`, `http://` y `https://`.
+- Tras login exitoso, `/login` muestra `Continuar activación` si hay `returnTo` valido y mantiene `Continuar al dashboard`.
 - Si el login es correcto, recibe `access_token` y `token_type`.
 - `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
 - `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
@@ -252,9 +267,10 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activaci
 - Durante la descarga muestra `Descargando QR...`.
 - Si descarga correctamente muestra `QR descargado correctamente.`.
 - Si el QR no existe muestra `Genera el QR antes de descargarlo.`.
-- Si el usuario no es admin o QR responde `403`, muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
+- Para usuarios no-admin, `/dashboard` oculta Gestion QR, estado QR, generar, regenerar, descargar, `object_key` y mensajes de permisos QR.
+- Para admin, `/dashboard` mantiene Gestion QR.
 - El cliente frontend de activacion es `activateDeviceWithClaimCode(publicId, claimCode, accessToken): Promise<Device>` en `apps/web/lib/devices.ts` y usa `buildApiUrl`.
-- `Activar identificador` usa inputs `public_id` y `claim_code`, placeholders `PID-XXXXXXXXXX` y `XXXX-XXXX-XXXX`, boton `Activar identificador`, estado `Activando...` y exito `Identificador activado correctamente.`.
+- `Activar identificador` usa inputs `public_id` y `claim_code`, placeholders `PID-XXXXXXXXXX` y `XXXX-XXXX-XXXX`, boton `Activar identificador`, estado `Activando...` y exito `Identificador vinculado correctamente.`.
 - El dashboard limpia `claim_code` del estado despues del envio y no lo guarda en `sessionStorage` ni `localStorage`.
 - Errores controlados: `400` datos de activacion invalidos, `401` sesion expirada o no autenticada, `404` identificador no disponible, `422` codigo de activacion invalido o incompleto, `429` demasiados intentos.
 - El `public_id` puede estar impreso o asociado al QR/NFC fisico, no contiene datos medicos y debe verificarse fisicamente antes de activarlo.
@@ -262,7 +278,7 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activaci
 - Estados visibles: `pending_activation` -> `Pendiente de activación`, `active` -> `Activo`, `disabled` -> `Deshabilitado`, `lost` -> `Reportado como perdido`.
 - El dashboard muestra descripcion operacional por estado.
 - El QR apunta a `/p/{public_id}`, solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
-- `object_key` se muestra como detalle tecnico.
+- `object_key` se muestra solo como detalle tecnico administrativo.
 - La descarga usa `URL.createObjectURL` y luego `URL.revokeObjectURL`.
 - La descarga obtiene el PNG desde el backend autenticado; no expone URL publica de MinIO.
 - No hay presigned URLs ni preview de imagen QR.
@@ -283,8 +299,10 @@ Register:
 ```bash
 curl -X POST http://localhost:8000/api/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"email":"user@example.com","password":"change-me-123","full_name":"Example User"}'
+  -d '{"email":"usuario@example.com","password":"Password123!","full_name":"Nombre Usuario"}'
 ```
+
+La respuesta es `UserRead`, sin token y sin `password_hash`.
 
 Login:
 
@@ -379,6 +397,6 @@ curl http://localhost:8000/api/public/devices/PID-ABCDEFGH23/activation-status
 
 ## Limites actuales
 
-No hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos.
+No hay email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. Registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`.
 
-Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`.
+Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`. Sprint 16 agrega registro de usuario final, hardening de email, `returnTo` seguro, integracion onboarding -> registro/login y UX post-vinculacion hacia perfil.

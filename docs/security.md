@@ -41,6 +41,17 @@ Sprint 2 implementa Auth Foundation:
 
 `password_hash` nunca debe exponerse en respuestas. Passwords y tokens no deben loguearse.
 
+Registro publico de usuario final en Sprint 16:
+
+- `POST /api/auth/register` recibe `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`.
+- Devuelve `UserRead`, no devuelve token y no inicia sesion automaticamente.
+- El rol se fuerza a `user`; el schema publico de creacion no acepta `role` ni `status`.
+- No se permite registrar `admin` desde el endpoint publico.
+- El email se normaliza con `strip().lower()` al registrar y al autenticar.
+- La busqueda por email es case-insensitive.
+- Duplicados con casing distinto responden `409`.
+- Se captura `IntegrityError` con rollback para no exponer stacktrace ante carreras del unique email.
+
 ## Device Foundation
 
 Sprint 3 implementa la base de dispositivos:
@@ -135,9 +146,10 @@ Proteccion contra fuerza bruta:
 
 Limites de seguridad actuales:
 
-- Aun no existe registro de usuario final desde primer escaneo.
-- El boton `Crear cuenta` queda como proximamente.
-- El usuario debe iniciar sesion antes de reclamar.
+- Existe registro de usuario final desde primer escaneo mediante `/register?returnTo=/p/{public_id}`.
+- El registro no inicia sesion automaticamente; el usuario debe iniciar sesion antes de reclamar.
+- `/login?returnTo=/p/{public_id}` permite volver al identificador despues de guardar el access token temporal.
+- `returnTo` se sanitiza: solo rutas internas que empiezan con `/`; se rechaza `//`, `http://` y `https://`.
 - La sesion sigue siendo temporal por `sessionStorage`.
 - Aun no existe provisionamiento masivo con export de `claim_code`.
 - Aun no hay auditoria formal de intentos.
@@ -224,7 +236,7 @@ Reglas del onboarding de primer escaneo:
 - `apps/web/app/p/[publicId]/activation-form.tsx` usa `getSessionToken()`.
 - Sin sesion, muestra CTA `Iniciar sesión`.
 - Con sesion, permite ingresar `claim_code` y llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)`.
-- En exito muestra `Identificador activado correctamente.` y CTA `Ir al dashboard`.
+- En exito muestra `Identificador vinculado correctamente.` y CTA `Completar perfil de emergencia` hacia `/dashboard?publicId={public_id}`.
 - `claim_code` no va en QR/NFC, no va en URL, no se guarda en `sessionStorage`, no se guarda en `localStorage`, no se loguea y se limpia despues del envio.
 - El frontend no expone `claim_code_hash`, `claim_attempts` ni `claim_locked_until`.
 
@@ -283,7 +295,7 @@ Sprint 12 expone activacion de identificadores desde `/dashboard`; Sprint 14 cam
 - La UI recomienda verificar fisicamente el identificador antes de activarlo.
 - El cliente `activateDeviceWithClaimCode(publicId, claimCode, accessToken): Promise<Device>` esta en `apps/web/lib/devices.ts` y usa `buildApiUrl`.
 - Maneja errores controlados: `400` datos de activacion invalidos, `401` sesion expirada o no autenticada, `404` identificador no disponible, `422` codigo de activacion invalido o incompleto y `429` demasiados intentos.
-- El dashboard muestra `Activando...` durante la solicitud y `Identificador activado correctamente.` al terminar.
+- El dashboard muestra `Activando...` durante la solicitud y `Identificador vinculado correctamente.` al terminar.
 - El dashboard refresca o actualiza la lista de dispositivos y muestra descripcion operacional por estado.
 - El dashboard limpia `claim_code` del estado despues del envio y no lo guarda en `sessionStorage` ni `localStorage`.
 - Estados visibles: `pending_activation` -> `Pendiente de activación`, `active` -> `Activo`, `disabled` -> `Deshabilitado`, `lost` -> `Reportado como perdido`.
@@ -299,7 +311,8 @@ Sprint 11 expone gestion QR administrativa desde `/dashboard` con descarga contr
 - El dashboard permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr`.
 - El dashboard permite descargar QR con `GET /api/admin/devices/{device_id}/qr/download` usando `downloadDeviceQr(deviceId, accessToken): Promise<Blob>`.
 - Los endpoints QR requieren Bearer token y `role=admin`.
-- Si el usuario no es admin o QR responde `403`, el frontend muestra `La gestión de QR requiere rol admin.`.
+- Para usuarios no-admin, `/dashboard` oculta visualmente Gestion QR, generar, regenerar, descargar, estado QR, `object_key` y mensajes de permisos QR.
+- Para admin, `/dashboard` mantiene Gestion QR.
 - Si no hay token o la sesion expiro, la descarga muestra `Sesión expirada o no autenticada.`.
 - Si el QR no existe, muestra `QR no encontrado. Genera el QR antes de descargarlo.` o la ayuda `Genera el QR antes de descargarlo.`.
 - Si descarga correctamente, muestra `QR descargado correctamente.`.
@@ -307,7 +320,7 @@ Sprint 11 expone gestion QR administrativa desde `/dashboard` con descarga contr
 - El QR apunta a `/p/{public_id}`.
 - El QR solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
 - La visualizacion depende de que el perfil este marcado como publico.
-- `object_key` se muestra solo como detalle tecnico.
+- `object_key` se muestra solo como detalle tecnico administrativo.
 - La descarga obtiene el PNG desde el backend autenticado.
 - El navegador crea un objeto temporal con `URL.createObjectURL` y lo revoca con `URL.revokeObjectURL`.
 - No se deben loguear tokens ni datos medicos.
@@ -319,8 +332,8 @@ Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditio
 
 ## Estado actual
 
-El estado actual no implementa registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code`, auditoria formal de intentos ni MFA.
+El estado actual no implementa email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. El registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`. Email verification queda propuesto para un sprint posterior.
 
-Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`.
+Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`. Sprint 16 agrega registro de usuario final, `returnTo` seguro y UX post-vinculacion hacia completar perfil.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
