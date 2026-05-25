@@ -99,6 +99,19 @@ class EmergencyProfileRead(BaseModel):
     deleted_at: datetime | None = None
 
 
+class EmergencyProfileReadinessRead(BaseModel):
+    is_ready: bool
+    can_publish: bool
+    is_public_operational: bool
+    device_status: str | None = None
+    public_profile_enabled: bool
+    required_fields: list[str]
+    completed_fields: list[str]
+    missing_fields: list[str]
+    blocking_reasons: list[str]
+    consent_version: str
+
+
 class EmergencyProfilePublicRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
