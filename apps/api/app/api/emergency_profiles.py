@@ -15,6 +15,7 @@ from app.schemas.emergency_profile import (
     EmergencyProfileUpdate,
 )
 from app.services.emergency_profiles import (
+    EmergencyProfilePublicationError,
     ProfileConsistencyError,
     create_or_update_profile_for_device,
 )
@@ -80,14 +81,15 @@ def put_device_emergency_profile(
     session: SessionDep,
     current_user: CurrentUserDep,
 ):
-    _get_owned_device(session, current_user, device_id)
+    device = _get_owned_device(session, current_user, device_id)
     try:
         return create_or_update_profile_for_device(
             session,
+            device=device,
             device_id=device_id,
             profile_data=payload,
         )
-    except ProfileConsistencyError as error:
+    except (EmergencyProfilePublicationError, ProfileConsistencyError) as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(error),
