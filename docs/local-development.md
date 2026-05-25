@@ -215,6 +215,7 @@ Endpoints protegidos:
 
 - `GET /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida ownership del device y devuelve el perfil completo del dueno.
 - `PUT /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida ownership del device y crea o actualiza el perfil.
+- `GET /api/devices/{device_id}/emergency-profile/readiness`: requiere Bearer token, valida ownership y devuelve readiness sin valores medicos.
 
 Endpoint publico:
 
@@ -223,10 +224,10 @@ Endpoint publico:
 Reglas del endpoint publico:
 
 - Busca por `Device.public_id`.
-- Solo responde si `device.status == "active"`.
-- Solo responde si `emergency_profile.is_public == true`.
-- Solo responde si `emergency_profile.deleted_at is null`.
-- No expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
+- Solo responde si `readiness.is_public_operational == true`.
+- Esto exige device `active`, `device.deleted_at is null`, profile existente, `profile.deleted_at is null`, campos minimos completos, consentimiento vigente e `is_public=true`.
+- Si no cumple, responde `404` generico.
+- No expone `id`, `device_id`, `user_id`, `is_public`, flags `*_none`, consentimiento, `created_at`, `updated_at` ni `deleted_at`.
 
 ## Public Profile Frontend
 
@@ -320,7 +321,7 @@ Campos disponibles del perfil:
 - `notes`
 - `is_public`
 
-`is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+`is_public` expresa intencion de publicacion; el backend solo publica si readiness y consentimiento vigente permiten operacion.
 
 Seguridad de esta version:
 
@@ -425,7 +426,7 @@ Sprint 11 agrega gestion QR desde `/dashboard` con descarga controlada del PNG.
 - La descarga usa `URL.createObjectURL` y revoca el objeto temporal con `URL.revokeObjectURL`.
 - Para usuarios no-admin, `/dashboard` oculta Gestion QR y no muestra mensaje de permisos QR.
 - El QR apunta a `/p/{public_id}` y solo contiene la URL publica del perfil.
-- La visualizacion depende de que el perfil este marcado como publico.
+- La visualizacion depende de que el perfil este operativo segun readiness.
 - `object_key` se muestra solo como detalle tecnico administrativo.
 - No hay presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
@@ -437,4 +438,4 @@ Validacion esperada para descarga QR:
 - `GET /dashboard` responde `200 OK`.
 - Prueba GUI: admin puede descargar `PID-XXXXXXXXXX.png` y QR inexistente muestra ayuda para generarlo antes.
 
-Limites actuales: no hay email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. Registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`.
+Limites actuales: no hay validacion estricta de telefono internacional, wizard profesional multi-vista para perfil, email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni provisionamiento masivo con export de `claim_code`. Registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`.
