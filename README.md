@@ -100,6 +100,74 @@ La ruta publica frontend `/p/{public_id}` ya existe. Ejemplo local: `http://loca
 - `/p/{public_id}` incluye un enlace discreto `ProtegID` hacia `/`.
 - El not-found publico mantiene `404` real, permite volver al inicio y no revela si el `public_id` existe.
 
+## Profile Readiness y Publicacion Segura
+
+Sprint 17 separa el identificador vinculado del estado operativo del perfil publico.
+
+- Identificador vinculado no significa ProtegID operativo.
+- El identificador queda vinculado cuando el usuario demuestra posesion fisica mediante `public_id + claim_code`.
+- ProtegID queda operativo solo cuando el perfil cumple readiness, tiene consentimiento vigente y esta habilitado como publico con `is_public=true`.
+- `device.status` representa el ciclo de vida fisico/operacional del identificador; readiness es un estado derivado del perfil.
+
+Campos minimos para que el perfil sea operativo:
+
+- `display_name`.
+- `emergency_contact_name`.
+- `emergency_contact_relationship`.
+- `emergency_contact_phone`.
+- `medical_conditions` o `medical_conditions_none=true`.
+- `allergies` o `allergies_none=true`.
+- `medications` o `medications_none=true`.
+- `public_consent_accepted_at`.
+- `public_consent_version` vigente segun `PUBLIC_PROFILE_CONSENT_VERSION`.
+- `is_public=true`.
+
+Campos backend agregados en `emergency_profiles`: `medical_conditions_none`, `allergies_none`, `medications_none`, `public_consent_accepted_at` y `public_consent_version`. `is_public` ahora tiene default `false` para nuevos perfiles.
+
+Consentimiento:
+
+- El consentimiento de publicacion es explicito y no se infiere desde `is_public`.
+- La version vigente se configura con `PUBLIC_PROFILE_CONSENT_VERSION`.
+- Si `public_consent_version` no coincide con la version vigente, el perfil no queda operativo.
+- El consentimiento no se expone publicamente.
+
+Readiness backend:
+
+- Servicio: `calculate_profile_readiness(device, profile)`.
+- Schema: `EmergencyProfileReadinessRead`.
+- Endpoint privado: `GET /api/devices/{device_id}/emergency-profile/readiness`.
+- Requiere autenticacion, verifica ownership y no expone valores medicos, `user_id` ni `device_id`.
+- Devuelve claves de campos requeridos, completados, faltantes y bloqueos.
+
+Publicacion segura:
+
+- El backend bloquea guardar `is_public=true` si el perfil no cumple readiness.
+- Error controlado: `Emergency profile is not ready for publication.`.
+- `GET /api/public/profiles/{public_id}` solo devuelve datos si `readiness.is_public_operational=true`.
+- Si el `public_id` no existe, el device no esta `active`, el device/profile esta eliminado, el profile no existe, esta incompleto, no tiene consentimiento vigente o `is_public=false`, responde `404` generico.
+- La respuesta publica no expone campos de control, ids internos ni timestamps internos.
+
+Dashboard:
+
+- Muestra progreso del perfil y estados `Perfil incompleto`, `Perfil listo para publicar` y `ProtegID operativo`.
+- Muestra campos obligatorios completados/faltantes y bloqueos traducidos.
+- Permite marcar `Sin condiciones declaradas`, `Sin alergias declaradas` y `Sin medicamentos declarados`.
+- Al marcar `Sin ... declaradas`, limpia/deshabilita el campo medico correspondiente.
+- Incluye consentimiento explicito de publicacion y refresca readiness despues de guardar.
+- Si ProtegID queda operativo, indica que el QR/NFC ya puede mostrar la ficha publica.
+
+Validaciones realizadas en Sprint 17:
+
+- Migracion Alembic aplicada.
+- Columnas nuevas verificadas en DB.
+- Nuevos perfiles quedan con `is_public=false` por defecto.
+- Validaciones `422` para estados inconsistentes: `medical_conditions_none=true` con texto, `allergies_none=true` con texto y `medications_none=true` con texto.
+- Readiness cubre `profile_missing`, `device_not_active`, perfil incompleto, consentimiento desactualizado, perfil completo publicable y perfil operativo.
+- Endpoint privado readiness cubre sin token `401`, device inexistente `404`, device de otro usuario `404` y device propio sin profile `200 profile_missing`.
+- Bloqueo de publicacion cubre incompleto con `is_public=true` `422`, sin consentimiento con `is_public=true` `422`, consentimiento antiguo con `is_public=true` `422`, y completo con consentimiento vigente con `is_public=true` `200`.
+- Endpoint publico cubre incompleto `404`, `is_public=false` `404`, y completo con consentimiento vigente e `is_public=true` `200`.
+- Dashboard muestra progreso `9/9`, estado `ProtegID operativo` y ficha publica visible al escanear `/p/{public_id}` cuando el perfil esta operativo.
+
 ## First Scan Onboarding Frontend
 
 Sprint 15 agrega el flujo frontend de primer escaneo sobre la URL publica permanente `/p/{public_id}`. Sprint 16 conecta ese onboarding con registro de usuario final, login y retorno al identificador.
@@ -176,9 +244,9 @@ La primera version del login frontend y sesion temporal existe.
 - El backend sigue validando Bearer token en endpoints privados.
 - El token vive solo durante la sesion/pestana del navegador y `sessionStorage` no se comparte entre pestanas.
 
-Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
+Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `allergies_none`, `medical_conditions`, `medical_conditions_none`, `medications`, `medications_none`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes`, `public_consent_accepted_at`, `public_consent_version` e `is_public`.
 
-`is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+`is_public` expresa intencion de publicacion, pero el backend solo publica si readiness y consentimiento vigente permiten operacion.
 
 ## User Registration Flow
 
@@ -362,7 +430,7 @@ Sprint 11 agrega gestion QR desde `/dashboard` con descarga controlada del PNG d
 - El backend sigue siendo la fuente de autorizacion.
 - El QR apunta a la URL publica `/p/{public_id}`.
 - El QR solo contiene la URL publica del perfil; no incluye datos medicos embebidos.
-- La visualizacion depende de que el perfil este marcado como publico con `is_public=true`.
+- La visualizacion depende de que el perfil este operativo segun readiness.
 - `object_key` se muestra solo en la gestion QR administrativa.
 - La descarga genera un objeto temporal en el navegador con `URL.createObjectURL(blob)` y luego lo revoca con `URL.revokeObjectURL()`.
 - La descarga obtiene el PNG desde el backend autenticado. No se expone URL publica de MinIO.
@@ -389,6 +457,6 @@ Validacion esperada:
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12, First Scan Activation Foundation de Sprint 13, Claim Code Activation Backend de Sprint 14, First Scan Onboarding Frontend de Sprint 15 y User Registration Flow de Sprint 16.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12, First Scan Activation Foundation de Sprint 13, Claim Code Activation Backend de Sprint 14, First Scan Onboarding Frontend de Sprint 15, User Registration Flow de Sprint 16 y Profile Readiness & Public Profile Completion de Sprint 17.
 
-Limites actuales: no hay email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. El registro no inicia sesion automaticamente, los roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`. Email verification queda propuesto para un sprint posterior.
+Limites actuales: no hay validacion estricta de telefono internacional, wizard profesional multi-vista de onboarding de perfil, email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend ni provisionamiento masivo con export de `claim_code`. El registro no inicia sesion automaticamente, los roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`. Email verification queda propuesto para un sprint posterior.

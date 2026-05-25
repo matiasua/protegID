@@ -9,8 +9,17 @@ from app.api.dependencies import CurrentUserDep, SessionDep
 from app.models import Device, User
 from app.repositories.devices import get_device_by_id
 from app.repositories.emergency_profiles import get_profile_by_device_id
-from app.schemas.emergency_profile import EmergencyProfileRead, EmergencyProfileUpdate
-from app.services.emergency_profiles import create_or_update_profile_for_device
+from app.schemas.emergency_profile import (
+    EmergencyProfileRead,
+    EmergencyProfileReadinessRead,
+    EmergencyProfileUpdate,
+)
+from app.services.emergency_profiles import (
+    EmergencyProfilePublicationError,
+    ProfileConsistencyError,
+    create_or_update_profile_for_device,
+)
+from app.services.profile_readiness import calculate_profile_readiness
 
 router = APIRouter(tags=["emergency-profiles"])
 
@@ -48,6 +57,20 @@ def get_device_emergency_profile(
     return profile
 
 
+@router.get(
+    "/api/devices/{device_id}/emergency-profile/readiness",
+    response_model=EmergencyProfileReadinessRead,
+)
+def get_device_emergency_profile_readiness(
+    device_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+):
+    device = _get_owned_device(session, current_user, device_id)
+    profile = get_profile_by_device_id(session, device_id)
+    return calculate_profile_readiness(device, profile)
+
+
 @router.put(
     "/api/devices/{device_id}/emergency-profile",
     response_model=EmergencyProfileRead,
@@ -58,9 +81,16 @@ def put_device_emergency_profile(
     session: SessionDep,
     current_user: CurrentUserDep,
 ):
-    _get_owned_device(session, current_user, device_id)
-    return create_or_update_profile_for_device(
-        session,
-        device_id=device_id,
-        profile_data=payload,
-    )
+    device = _get_owned_device(session, current_user, device_id)
+    try:
+        return create_or_update_profile_for_device(
+            session,
+            device=device,
+            device_id=device_id,
+            profile_data=payload,
+        )
+    except (EmergencyProfilePublicationError, ProfileConsistencyError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error

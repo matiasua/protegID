@@ -182,6 +182,18 @@ Endpoints privados:
 
 - `GET /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida que el device pertenezca al usuario autenticado y devuelve el perfil completo.
 - `PUT /api/devices/{device_id}/emergency-profile`: requiere Bearer token, valida que el device pertenezca al usuario autenticado y crea o actualiza el perfil.
+- `GET /api/devices/{device_id}/emergency-profile/readiness`: requiere Bearer token, valida ownership y devuelve readiness sin valores medicos.
+
+Profile readiness Sprint 17:
+
+- Identificador vinculado no significa ProtegID operativo.
+- ProtegID queda operativo solo si el perfil cumple datos minimos, consentimiento vigente y `is_public=true`.
+- Servicio: `calculate_profile_readiness(device, profile)`.
+- Schema: `EmergencyProfileReadinessRead`.
+- Nuevos campos: `medical_conditions_none`, `allergies_none`, `medications_none`, `public_consent_accepted_at`, `public_consent_version`.
+- `is_public` tiene default `false` para nuevos perfiles.
+- `PUBLIC_PROFILE_CONSENT_VERSION` define la version vigente de consentimiento.
+- El backend rechaza `is_public=true` si el perfil no cumple readiness con `422 Emergency profile is not ready for publication.`.
 
 Endpoint publico:
 
@@ -190,10 +202,10 @@ Endpoint publico:
 Reglas del endpoint publico:
 
 - Busca por `Device.public_id`.
-- Solo responde si `device.status == "active"`.
-- Solo responde si `emergency_profile.is_public == true`.
-- Solo responde si `emergency_profile.deleted_at is null`.
-- No expone `id`, `device_id`, `created_at`, `updated_at` ni `deleted_at`.
+- Solo responde si `readiness.is_public_operational == true`.
+- Esto exige device `active`, `device.deleted_at is null`, profile existente, `profile.deleted_at is null`, campos minimos completos, consentimiento vigente e `is_public=true`.
+- Si no cumple, responde `404` generico.
+- No expone `id`, `device_id`, `user_id`, `is_public`, flags `*_none`, consentimiento, `created_at`, `updated_at` ni `deleted_at`.
 
 ## QR Foundation
 
@@ -282,7 +294,7 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activaci
 - La descarga usa `URL.createObjectURL` y luego `URL.revokeObjectURL`.
 - La descarga obtiene el PNG desde el backend autenticado; no expone URL publica de MinIO.
 - No hay presigned URLs ni preview de imagen QR.
-- `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+- `is_public` expresa intencion de publicacion; el backend solo publica si readiness y consentimiento vigente permiten operacion.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
 - Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
 - Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
@@ -380,7 +392,14 @@ Create or update private emergency profile:
 curl -X PUT http://localhost:8000/api/devices/<device_id>/emergency-profile \
   -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
-  -d '{"display_name":"Example User","blood_type":"O+","is_public":true}'
+  -d '{"display_name":"Example User","emergency_contact_name":"Contact","emergency_contact_phone":"+56912345678","emergency_contact_relationship":"Family","medical_conditions_none":true,"allergies_none":true,"medications_none":true,"public_consent_accepted_at":"2026-05-24T12:00:00Z","public_consent_version":"2026-05-v1","is_public":true}'
+```
+
+Get private emergency profile readiness:
+
+```bash
+curl http://localhost:8000/api/devices/<device_id>/emergency-profile/readiness \
+  -H 'Authorization: Bearer <access_token>'
 ```
 
 Get public emergency profile:
@@ -397,6 +416,6 @@ curl http://localhost:8000/api/public/devices/PID-ABCDEFGH23/activation-status
 
 ## Limites actuales
 
-No hay email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. Registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`.
+No hay validacion estricta de telefono internacional, wizard profesional multi-vista de onboarding de perfil, email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni provisionamiento masivo con export de `claim_code`. Registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`.
 
-Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`. Sprint 16 agrega registro de usuario final, hardening de email, `returnTo` seguro, integracion onboarding -> registro/login y UX post-vinculacion hacia perfil.
+Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`. Sprint 16 agrega registro de usuario final, hardening de email, `returnTo` seguro, integracion onboarding -> registro/login y UX post-vinculacion hacia perfil. Sprint 17 agrega readiness productivo, consentimiento explicito, bloqueo de publicacion incompleta, endpoint privado de readiness, endpoint publico endurecido y progreso en dashboard.

@@ -21,6 +21,7 @@ class Settings:
     minio_bucket: str
     public_app_url: str
     public_profile_path: str
+    public_profile_consent_version: str
     jwt_secret_key: str
     jwt_algorithm: str
     access_token_expire_minutes: int
@@ -37,6 +38,9 @@ class Settings:
         self.minio_bucket = getenv("MINIO_BUCKET", "")
         self.public_app_url = getenv("PUBLIC_APP_URL", "http://localhost:8080")
         self.public_profile_path = getenv("PUBLIC_PROFILE_PATH", "/p")
+        self.public_profile_consent_version = getenv(
+            "PUBLIC_PROFILE_CONSENT_VERSION", "2026-05-v1"
+        )
         self.jwt_secret_key = getenv("JWT_SECRET_KEY", "")
         self.jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
         self.access_token_expire_minutes = int(

@@ -11,6 +11,9 @@
 - Mantener configuracion sensible mediante variables de entorno.
 - No incluir `claim_code` en QR/NFC, URLs, logs ni respuestas API.
 - No guardar `claim_code` en texto plano; guardar solo `claim_code_hash`.
+- No publicar perfiles incompletos ni sin consentimiento vigente.
+- No inferir consentimiento desde `is_public`.
+- No exponer campos internos de readiness, consentimiento ni ids internos en respuestas publicas.
 
 ## Variables de entorno
 
@@ -28,6 +31,12 @@ Variables publicas usadas para QR:
 - `PUBLIC_PROFILE_PATH`: path publico de perfil. Valor local por defecto: `/p`.
 
 Estas variables no son secretos. Se usan para construir la URL publica codificada en el QR mediante `build_public_profile_url(public_id)`.
+
+Variable de consentimiento publico:
+
+- `PUBLIC_PROFILE_CONSENT_VERSION`: version vigente del consentimiento de publicacion. Valor local por defecto: `2026-05-v1`.
+
+Si la version aceptada por el perfil no coincide con esta variable, el perfil no queda operativo publicamente.
 
 ## Autenticacion
 
@@ -170,13 +179,28 @@ Controles de seguridad y privacidad:
 - Los endpoints privados validan ownership mediante `current_user.id` y `device.user_id`.
 - El endpoint publico no requiere autenticacion.
 - El endpoint publico busca por `Device.public_id`.
-- El endpoint publico solo responde si `device.status == "active"`.
-- El endpoint publico solo responde si `emergency_profile.is_public == true`.
-- El endpoint publico solo responde si `emergency_profile.deleted_at is null`.
+- El endpoint publico solo responde si `readiness.is_public_operational == true`.
+- Esto exige `device.status == "active"`, `device.deleted_at is null`, profile existente, `profile.deleted_at is null`, campos minimos completos, consentimiento vigente e `is_public == true`.
+- El endpoint publico responde `404` generico si el `public_id` no existe, el device no esta activo, el device/profile esta eliminado, el profile no existe, esta incompleto, falta consentimiento vigente o `is_public=false`.
 - La respuesta publica no expone `id` interno.
 - La respuesta publica no expone `device_id`.
+- La respuesta publica no expone `user_id`.
+- La respuesta publica no expone `is_public`.
+- La respuesta publica no expone flags `*_none`.
+- La respuesta publica no expone `public_consent_accepted_at` ni `public_consent_version`.
 - La respuesta publica no expone `created_at`, `updated_at` ni `deleted_at`.
 - Los datos medicos no deben loguearse.
+
+Readiness y consentimiento:
+
+- Identificador vinculado no significa ProtegID operativo.
+- `calculate_profile_readiness(device, profile)` es la fuente backend para determinar readiness.
+- `GET /api/devices/{device_id}/emergency-profile/readiness` requiere Bearer token, verifica ownership y no expone valores medicos.
+- Campos minimos: `display_name`, contacto de emergencia completo, decision explicita para condiciones medicas/alergias/medicamentos, consentimiento aceptado, version vigente e `is_public=true`.
+- El consentimiento es explicito, versionado con `PUBLIC_PROFILE_CONSENT_VERSION` y no se infiere desde `is_public`.
+- `is_public` tiene default `false` para nuevos perfiles.
+- El backend bloquea `is_public=true` si el perfil no cumple readiness con `422 Emergency profile is not ready for publication.`.
+- El frontend solo guia la experiencia; el backend decide autorizacion y publicacion.
 
 ## QR Foundation
 
@@ -319,21 +343,21 @@ Sprint 11 expone gestion QR administrativa desde `/dashboard` con descarga contr
 - El dashboard no debe romper si QR responde `403`; devices y editor de perfil siguen disponibles.
 - El QR apunta a `/p/{public_id}`.
 - El QR solo contiene la URL publica del perfil y no incluye datos medicos embebidos.
-- La visualizacion depende de que el perfil este marcado como publico.
+- La visualizacion depende de que el perfil este operativo segun readiness.
 - `object_key` se muestra solo como detalle tecnico administrativo.
 - La descarga obtiene el PNG desde el backend autenticado.
 - El navegador crea un objeto temporal con `URL.createObjectURL` y lo revoca con `URL.revokeObjectURL`.
 - No se deben loguear tokens ni datos medicos.
 - No hay presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
-Campos gestionados: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
+Campos gestionados: `display_name`, `blood_type`, `allergies`, `allergies_none`, `medical_conditions`, `medical_conditions_none`, `medications`, `medications_none`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes`, `public_consent_accepted_at`, `public_consent_version` e `is_public`.
 
-`is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+`is_public` expresa intencion de publicacion, pero el backend solo publica si readiness y consentimiento vigente permiten operacion.
 
 ## Estado actual
 
-El estado actual no implementa email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. El registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`. Email verification queda propuesto para un sprint posterior.
+El estado actual no implementa validacion estricta de telefono internacional, wizard profesional multi-vista para perfil, email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni provisionamiento masivo con export de `claim_code`. El registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`. Email verification queda propuesto para un sprint posterior.
 
-Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`. Sprint 16 agrega registro de usuario final, `returnTo` seguro y UX post-vinculacion hacia completar perfil.
+Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`. Sprint 16 agrega registro de usuario final, `returnTo` seguro y UX post-vinculacion hacia completar perfil. Sprint 17 agrega readiness productivo, consentimiento explicito, bloqueo de publicacion incompleta, endpoint privado de readiness, endpoint publico endurecido y progreso en dashboard.
 
 `device_type="qr_nfc_tag"` existe como base del modelo de dispositivo. QR Foundation ya existe; NFC todavia no esta implementado.
