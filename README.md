@@ -46,6 +46,7 @@ La aplicacion queda disponible en:
 
 - Home / landing MVP via Nginx: `http://localhost:8080`
 - Login frontend temporal: `http://localhost:8080/login`
+- Registro frontend: `http://localhost:8080/register`
 - Dashboard privado temporal: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck via Nginx: `http://localhost:8080/api/health`
@@ -101,7 +102,7 @@ La ruta publica frontend `/p/{public_id}` ya existe. Ejemplo local: `http://loca
 
 ## First Scan Onboarding Frontend
 
-Sprint 15 agrega el flujo frontend de primer escaneo sobre la URL publica permanente `/p/{public_id}`.
+Sprint 15 agrega el flujo frontend de primer escaneo sobre la URL publica permanente `/p/{public_id}`. Sprint 16 conecta ese onboarding con registro de usuario final, login y retorno al identificador.
 
 - El QR/NFC apunta a `/p/{public_id}` y solo contiene esa URL publica permanente.
 - Si existe perfil publico, `/p/{public_id}` mantiene la ficha publica.
@@ -113,21 +114,43 @@ Sprint 15 agrega el flujo frontend de primer escaneo sobre la URL publica perman
 - Indica que el codigo de activacion viene dentro del empaque fisico.
 - Indica que el QR/NFC solo contiene la URL publica permanente del identificador.
 - Muestra `public_id` como referencia tecnica discreta.
-- Si no hay sesion temporal, muestra CTA `Iniciar sesión` hacia `/login` y explica que el usuario debe volver a escanear o regresar a la URL.
-- El registro queda marcado como `Crear cuenta próximamente`.
+- Si no hay sesion temporal, muestra CTA `Iniciar sesión` hacia `/login?returnTo=/p/{public_id}`.
+- Si no hay sesion temporal, muestra CTA `Crear cuenta` hacia `/register?returnTo=/p/{public_id}`.
 - Si hay sesion temporal, `apps/web/app/p/[publicId]/activation-form.tsx` permite ingresar `claim_code`.
 - El formulario usa `getSessionToken()` y llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)`.
 - La activacion envia `POST /api/devices/activate` con body `{ "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }`.
-- En exito muestra `Identificador activado correctamente.` y CTA `Ir al dashboard`.
+- En exito muestra `Identificador vinculado correctamente.`.
+- El CTA posterior es `Completar perfil de emergencia` y apunta a `/dashboard?publicId={public_id}`.
+- `/dashboard?publicId={public_id}` selecciona automaticamente el dispositivo si pertenece al usuario y carga el editor de perfil.
+
+Flujo esperado de usuario final:
+
+- `/p/{public_id}`.
+- `/register?returnTo=/p/{public_id}`.
+- `/login?returnTo=/p/{public_id}`.
+- `/p/{public_id}`.
+- Ingreso de `claim_code`.
+- Identificador vinculado.
+- `/dashboard?publicId={public_id}`.
+- Completar perfil de emergencia y marcarlo publico si corresponde.
 
 ## Auth Frontend Foundation
 
 La primera version del login frontend y sesion temporal existe.
 
 - Ruta frontend de login: `/login`.
+- Ruta frontend de registro: `/register`.
 - Ruta privada: `/dashboard`.
+- `/register` permite crear cuenta con Nombre, Email y Password.
+- `/register` consume `POST /api/auth/register` mediante `register(payload)` y envia `full_name` al backend.
+- El registro devuelve `UserRead`, no devuelve token y no inicia sesion automaticamente.
+- `/register` no guarda token, no usa `localStorage` ni `sessionStorage`, y limpia el password tras registro exitoso.
+- Si el backend responde `409`, `/register` muestra `Ya existe una cuenta con este correo.`.
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
+- `/login` soporta `returnTo` y, despues de login exitoso, si `returnTo` valido existe muestra CTA `Continuar activación`.
+- `/login` mantiene CTA `Continuar al dashboard`.
+- `returnTo` se sanitiza: solo acepta rutas internas que empiezan con `/`, rechaza `//` y rechaza URLs absolutas `http://` o `https://`.
 - `/login` tiene enlace `Volver al inicio`.
 - `/login` detecta si ya existe `protegid_access_token` en `sessionStorage` y muestra `Ya existe una sesión temporal activa.`.
 - Desde `/login` se puede ir a `/dashboard` o cerrar la sesion temporal con `clearSessionToken()` sin validar automaticamente contra backend.
@@ -156,6 +179,45 @@ La primera version del login frontend y sesion temporal existe.
 Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `medical_conditions`, `medications`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes` e `is_public`.
 
 `is_public` controla si el perfil puede mostrarse publicamente en `/p/{public_id}`.
+
+## User Registration Flow
+
+Sprint 16 habilita registro publico de usuario final desde primer escaneo.
+
+Backend:
+
+- `POST /api/auth/register` recibe body `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`.
+- Devuelve `UserRead`; no devuelve token y no inicia sesion automaticamente.
+- El rol publico se fuerza a `user`; no se permite registrar `admin` desde el endpoint publico.
+- `password_hash` no se expone y el password no debe loguearse.
+- El email se normaliza con `strip().lower()` al registrar y al autenticar.
+- La busqueda por email es case-insensitive.
+- Registro duplicado con casing distinto responde `409`.
+- Se captura `IntegrityError` con rollback para evitar race condition del unique email.
+
+Frontend:
+
+- `/register` muestra formulario Nombre, Email y Password.
+- Envia `full_name` al backend.
+- No guarda password, token ni `claim_code`.
+- No inicia sesion automaticamente.
+- Soporta `returnTo` y enlaza a `/login?returnTo={returnTo}` si la ruta es interna valida.
+
+Validacion cubierta:
+
+- Registro con email mixto -> `201`.
+- Email guardado en lowercase.
+- Login con lowercase -> `200`.
+- Login con casing mixto -> `200`.
+- `GET /api/auth/me` -> `200`.
+- Registro duplicado con casing distinto -> `409`.
+- `password_hash` no expuesto.
+- Rol creado como `user`.
+- `GET /register` -> `200`.
+- `GET /register?returnTo=/p/{public_id}` -> `200`.
+- `GET /login?returnTo=/p/{public_id}` -> `200`.
+- `returnTo` externo se descarta.
+- Build frontend OK.
 
 UX actual de `/dashboard`: validacion automatica si existe token temporal, secciones de estado de sesion, activacion de identificador, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, estado legible, descripcion operacional, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
 
@@ -243,9 +305,9 @@ GET /api/public/devices/{public_id}/activation-status
 
 Limites actuales:
 
-- Aun no existe registro de usuario final desde primer escaneo.
-- El boton `Crear cuenta` queda como proximamente.
-- El usuario debe iniciar sesion antes de reclamar.
+- Existe registro de usuario final desde primer escaneo mediante `/register?returnTo=/p/{public_id}`.
+- El boton `Crear cuenta` apunta a `/register?returnTo=/p/{public_id}`.
+- El registro no inicia sesion automaticamente; el usuario debe iniciar sesion antes de reclamar.
 - La sesion sigue siendo temporal por `sessionStorage`.
 - No hay scanner QR.
 - No hay lectura NFC real desde navegador.
@@ -295,12 +357,13 @@ Sprint 11 agrega gestion QR desde `/dashboard` con descarga controlada del PNG d
 - Si la descarga termina correctamente muestra `QR descargado correctamente.`.
 - Si el QR no existe, el dashboard indica `Genera el QR antes de descargarlo.`.
 - Los endpoints QR requieren Bearer token y `role=admin`.
-- Si el usuario no es admin o QR responde `403`, el frontend muestra `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices y editor de perfil.
+- Para usuario no-admin, el dashboard no muestra `Gestión QR`, estado QR, generar/regenerar/descargar QR, `object_key` ni el mensaje `La gestión de QR requiere rol admin.`.
+- Para admin, el dashboard mantiene `Gestión QR`.
 - El backend sigue siendo la fuente de autorizacion.
 - El QR apunta a la URL publica `/p/{public_id}`.
 - El QR solo contiene la URL publica del perfil; no incluye datos medicos embebidos.
 - La visualizacion depende de que el perfil este marcado como publico con `is_public=true`.
-- `object_key` se muestra como detalle tecnico.
+- `object_key` se muestra solo en la gestion QR administrativa.
 - La descarga genera un objeto temporal en el navegador con `URL.createObjectURL(blob)` y luego lo revoca con `URL.revokeObjectURL()`.
 - La descarga obtiene el PNG desde el backend autenticado. No se expone URL publica de MinIO.
 - No hay presigned URLs, preview de imagen QR, apertura de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
@@ -318,14 +381,14 @@ Validacion esperada:
 - `GET /api/admin/devices/{device_id}/qr/download` con usuario no admin responde `403`.
 - `GET /api/admin/devices/{device_id}/qr/download` con admin y QR existente responde `200` con `Content-Type: image/png`.
 - Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
-- Prueba GUI de activacion: iniciar sesion, ir a `/dashboard`, ingresar un `public_id` pendiente, activar identificador, ver `Identificador activado correctamente.` y confirmar que aparece en `Mis dispositivos` como `Activo`.
+- Prueba GUI de activacion: crear cuenta desde primer escaneo, login con `returnTo`, volver a `/p/{public_id}`, ingresar `claim_code`, ver `Identificador vinculado correctamente.`, ir a `/dashboard?publicId={public_id}` y completar perfil.
 - Usuario admin: ve estado QR y puede generar/regenerar QR.
 - Usuario admin: puede descargar `PID-XXXXXXXXXX.png` desde Gestion QR.
 - QR inexistente: muestra ayuda para generarlo antes de descargarlo.
-- Usuario no admin: ve `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
+- Usuario no admin: no ve Gestion QR, generar, regenerar, descargar QR, `object_key` ni mensaje de permisos QR.
 
 ## Estado actual
 
-Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12, First Scan Activation Foundation de Sprint 13, Claim Code Activation Backend de Sprint 14 y First Scan Onboarding Frontend de Sprint 15.
+Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12, First Scan Activation Foundation de Sprint 13, Claim Code Activation Backend de Sprint 14, First Scan Onboarding Frontend de Sprint 15 y User Registration Flow de Sprint 16.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. Para produccion se evaluara una estrategia de sesion mas robusta.
+Limites actuales: no hay email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. El registro no inicia sesion automaticamente, los roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`. Email verification queda propuesto para un sprint posterior.

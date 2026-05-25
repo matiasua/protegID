@@ -24,6 +24,7 @@ Servicios principales:
 
 - Home / landing MVP via Nginx: `http://localhost:8080`
 - Login frontend temporal: `http://localhost:8080/login`
+- Registro frontend: `http://localhost:8080/register`
 - Dashboard privado temporal: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck: `http://localhost:8080/api/health`
@@ -112,7 +113,9 @@ Endpoints actuales:
 
 `GET /api/auth/me` requiere header `Authorization: Bearer <access_token>`.
 
-No hay refresh token, recuperacion de password ni MFA.
+`POST /api/auth/register` recibe `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`, devuelve `UserRead`, no devuelve token y no inicia sesion automaticamente. El rol publico se fuerza a `user`, `password_hash` no se expone, email se normaliza con `strip().lower()` en registro/login, la busqueda por email es case-insensitive y duplicados con casing distinto responden `409`. Se captura `IntegrityError` con rollback.
+
+No hay refresh token, recuperacion de password, email verification ni MFA.
 
 ## Device Foundation
 
@@ -198,7 +201,7 @@ docker compose exec -T protegid-api alembic upgrade head
 - `GET /api/public/devices/{public_id}/activation-status` con `lost` debe responder `404`.
 - `GET /api/public/devices/{public_id}/activation-status` con inexistente debe responder `404`.
 
-Limites actuales: no existe registro de usuario final desde primer escaneo, el boton `Crear cuenta` queda como proximamente, el usuario debe iniciar sesion antes de reclamar, la sesion sigue siendo temporal por `sessionStorage`, no existe scanner QR, no existe lectura NFC real desde navegador, no existe provisionamiento masivo con export de `claim_code` y no hay auditoria formal de intentos.
+Limites actuales: el registro de usuario final desde primer escaneo existe, pero no inicia sesion automaticamente; el usuario debe iniciar sesion antes de reclamar. La sesion sigue siendo temporal por `sessionStorage`, no existe scanner QR, no existe lectura NFC real desde navegador, no existe provisionamiento masivo con export de `claim_code` y no hay auditoria formal de intentos.
 
 ## Public Profile Foundation
 
@@ -257,9 +260,12 @@ Flujo local esperado:
 - El onboarding indica que el identificador fisico aun no esta vinculado, que el `claim_code` viene dentro del empaque fisico y que el QR/NFC solo contiene la URL publica permanente.
 - Muestra `public_id` como referencia tecnica discreta.
 - Sin sesion temporal, `apps/web/app/p/[publicId]/activation-form.tsx` muestra CTA `Iniciar sesión`.
+- Sin sesion temporal, Login apunta a `/login?returnTo=/p/{public_id}` y Crear cuenta apunta a `/register?returnTo=/p/{public_id}`.
 - Con sesion temporal, permite ingresar `claim_code` y llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)`.
 - La activacion envia `POST /api/devices/activate` con body `{ "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }`.
-- En exito muestra `Identificador activado correctamente.` y CTA `Ir al dashboard`.
+- En exito muestra `Identificador vinculado correctamente.` y CTA `Completar perfil de emergencia` hacia `/dashboard?publicId={public_id}`.
+
+Flujo GUI esperado: `/p/{public_id}` -> `/register?returnTo=/p/{public_id}` -> `/login?returnTo=/p/{public_id}` -> `/p/{public_id}` -> `claim_code` -> `/dashboard?publicId={public_id}` -> completar perfil.
 
 ## Home y Navegacion Frontend
 
@@ -280,6 +286,10 @@ Estado actual:
 
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
+- `/register` permite crear cuenta con Nombre, Email y Password; consume `POST /api/auth/register`, envia `full_name`, no guarda token, no usa storage y limpia password tras registro exitoso.
+- `/register` muestra `Ya existe una cuenta con este correo.` ante `409`.
+- `/register` y `/login` soportan `returnTo` sanitizado; solo aceptan rutas internas que empiezan con `/`, rechazan `//`, `http://` y `https://`.
+- Tras login exitoso, `/login` muestra `Continuar activación` si hay `returnTo` valido y mantiene `Continuar al dashboard`.
 - Si el login es correcto, recibe `access_token` y `token_type`.
 - `/login` guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
 - `/login` muestra el token en `textarea` readonly por transparencia temporal del MVP.
@@ -339,7 +349,7 @@ Sprint 12 agrega activacion de identificadores desde `/dashboard`; Sprint 14 cam
 - El `public_id` no contiene datos medicos.
 - La UI recomienda verificar fisicamente el identificador antes de activarlo.
 - El boton muestra `Activar identificador` y durante la solicitud `Activando...`.
-- Si activa correctamente muestra `Identificador activado correctamente.`.
+- Si activa correctamente muestra `Identificador vinculado correctamente.`.
 - La lista `Mis dispositivos` se refresca o actualiza despues de activar.
 - El dashboard mantiene perfil, QR, generacion, descarga y edicion.
 - El cliente frontend es `activateDeviceWithClaimCode(publicId, claimCode, accessToken): Promise<Device>` en `apps/web/lib/devices.ts`.
@@ -359,7 +369,7 @@ Validacion esperada de activacion:
 
 - `GET /dashboard` debe responder `200 OK`.
 - Prueba HTTP backend: enviar `public_id + claim_code` validos y confirmar `200`, `status=active`, `user_id`, `activated_at` y `claimed_at`.
-- Prueba GUI: ingresar `public_id + claim_code` validos en `/dashboard`, activar y confirmar `Identificador activado correctamente.`.
+- Prueba GUI: ingresar `public_id + claim_code` validos en `/dashboard`, activar y confirmar `Identificador vinculado correctamente.`.
 - No hay scanner QR, lectura NFC, camara, geolocalizacion, tracking, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend ni creacion admin de devices desde frontend.
 - El backend sigue siendo la fuente de autorizacion.
 
@@ -379,7 +389,8 @@ docker compose run --rm --no-deps protegid-web sh -lc "rm -rf .next && npm run b
 - Prueba GUI de onboarding: sin sesion muestra CTA login; con sesion muestra formulario `claim_code`; `claim_code` correcto activa device; `claim_code` incorrecto muestra error controlado.
 - Prueba GUI de dashboard: activar con `public_id + claim_code` y confirmar que `claim_code` no queda en `sessionStorage` ni `localStorage`.
 - Usuario admin: ve estado QR y puede generar/regenerar QR desde `/dashboard`.
-- Usuario no admin: ve `La gestión de QR requiere rol admin.` y el dashboard sigue mostrando devices/perfil.
+- Usuario no admin: no ve Gestion QR, generar, regenerar, descargar QR, `object_key` ni mensaje de permisos QR.
+- Admin: mantiene Gestion QR.
 
 ## QR Foundation
 
@@ -412,10 +423,10 @@ Sprint 11 agrega gestion QR desde `/dashboard` con descarga controlada del PNG.
 - Si descarga correctamente muestra `QR descargado correctamente.`.
 - Si el QR no existe muestra `Genera el QR antes de descargarlo.`.
 - La descarga usa `URL.createObjectURL` y revoca el objeto temporal con `URL.revokeObjectURL`.
-- Si no hay permisos, muestra `La gestión de QR requiere rol admin.` y no rompe la gestion de devices/perfil.
+- Para usuarios no-admin, `/dashboard` oculta Gestion QR y no muestra mensaje de permisos QR.
 - El QR apunta a `/p/{public_id}` y solo contiene la URL publica del perfil.
 - La visualizacion depende de que el perfil este marcado como publico.
-- `object_key` se muestra como detalle tecnico.
+- `object_key` se muestra solo como detalle tecnico administrativo.
 - No hay presigned URLs, preview de imagen QR, apertura directa de MinIO, NFC funcional, tracking, geolocalizacion ni notificaciones.
 
 Validacion esperada para descarga QR:
@@ -426,4 +437,4 @@ Validacion esperada para descarga QR:
 - `GET /dashboard` responde `200 OK`.
 - Prueba GUI: admin puede descargar `PID-XXXXXXXXXX.png` y QR inexistente muestra ayuda para generarlo antes.
 
-Limites actuales: no hay registro frontend completo, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, roles avanzados en frontend, expiracion visual previa del token, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, registro de usuario final desde primer escaneo, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos.
+Limites actuales: no hay email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa del token, readiness completo de perfil publico, bloqueo de publicacion por campos minimos obligatorios, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica, provisionamiento masivo con export de `claim_code` ni auditoria formal de intentos. Registro no inicia sesion automaticamente, roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`.
