@@ -45,13 +45,26 @@ make up
 La aplicacion queda disponible en:
 
 - Home / landing MVP via Nginx: `http://localhost:8080`
-- Login frontend temporal: `http://localhost:8080/login`
+- Login frontend: `http://localhost:8080/login`
 - Registro frontend: `http://localhost:8080/register`
-- Dashboard privado temporal: `http://localhost:8080/dashboard`
+- Dashboard privado: `http://localhost:8080/dashboard`
 - Perfil publico frontend: `http://localhost:8080/p/PID-XXXXXXXXXX`
 - API healthcheck via Nginx: `http://localhost:8080/api/health`
 - API readiness via Nginx: `http://localhost:8080/api/ready`
 - MinIO console: `http://localhost:9001`
+
+## Sesiones Seguras Sprint 18
+
+ProtegID usa sesiones server-side para el producto web.
+
+- `POST /api/auth/login` autentica credenciales, crea una fila en `auth_sessions`, setea cookies y devuelve `user`; no devuelve `access_token`, `token_type`, token de sesion ni `session_token_hash`.
+- El navegador recibe `protegid_session` en local como cookie HttpOnly con token opaco; el token raw no se guarda en DB, solo `session_token_hash`.
+- `GET /api/auth/me` y los endpoints privados usan `CurrentUserDep`, que autentica solo por cookie de sesion.
+- `POST /api/auth/logout` revoca la sesion server-side y borra cookies.
+- El frontend no guarda tokens en `sessionStorage` ni `localStorage`, no muestra tokens y no envia `Authorization Bearer`; usa `credentials: "include"`.
+- CSRF usa double-submit: cookie `protegid_csrf` legible por JS y header `X-CSRF-Token` en metodos mutantes.
+
+Produccion debe servir web y API bajo HTTPS, idealmente mismo dominio/origin con `/api` detras del reverse proxy. Usar `SESSION_COOKIE_NAME=__Host-protegid_session`, `SESSION_COOKIE_SECURE=true`, `SESSION_COOKIE_SAMESITE=lax`, `SESSION_COOKIE_PATH=/` y no definir `Domain`.
 
 ## Comandos
 
@@ -79,7 +92,7 @@ La ruta `/` funciona como landing inicial del MVP de ProtegID.
 - Incluye acceso directo a `/login` mediante `Iniciar sesion`.
 - Incluye acceso directo a `/dashboard` mediante `Ir al dashboard`.
 - Explica el flujo principal: activar identificador, completar perfil de emergencia y compartir acceso publico mediante QR/NFC.
-- Muestra el estado actual del MVP: login temporal, dashboard privado, perfil publico por `public_id` y QR generado hacia `/p/{public_id}`.
+- Muestra el estado actual: login con cookie HttpOnly, dashboard privado, perfil publico por `public_id` y QR generado hacia `/p/{public_id}`.
 - Incluye la nota de alcance: `Este MVP aún no reemplaza credenciales oficiales ni atención médica profesional.`
 
 ## Perfil Publico Frontend
@@ -182,10 +195,10 @@ Sprint 15 agrega el flujo frontend de primer escaneo sobre la URL publica perman
 - Indica que el codigo de activacion viene dentro del empaque fisico.
 - Indica que el QR/NFC solo contiene la URL publica permanente del identificador.
 - Muestra `public_id` como referencia tecnica discreta.
-- Si no hay sesion temporal, muestra CTA `Iniciar sesión` hacia `/login?returnTo=/p/{public_id}`.
-- Si no hay sesion temporal, muestra CTA `Crear cuenta` hacia `/register?returnTo=/p/{public_id}`.
-- Si hay sesion temporal, `apps/web/app/p/[publicId]/activation-form.tsx` permite ingresar `claim_code`.
-- El formulario usa `getSessionToken()` y llama `activateDeviceWithClaimCode(publicId, claimCode, accessToken)`.
+- Si no hay sesion, muestra CTA `Iniciar sesión` hacia `/login?returnTo=/p/{public_id}`.
+- Si no hay sesion, muestra CTA `Crear cuenta` hacia `/register?returnTo=/p/{public_id}`.
+- Si hay sesion por cookie, `apps/web/app/p/[publicId]/activation-form.tsx` permite ingresar `claim_code`.
+- El formulario llama `activateDeviceWithClaimCode(publicId, claimCode)` usando cookie y CSRF.
 - La activacion envia `POST /api/devices/activate` con body `{ "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }`.
 - En exito muestra `Identificador vinculado correctamente.`.
 - El CTA posterior es `Completar perfil de emergencia` y apunta a `/dashboard?publicId={public_id}`.
@@ -202,9 +215,9 @@ Flujo esperado de usuario final:
 - `/dashboard?publicId={public_id}`.
 - Completar perfil de emergencia y marcarlo publico si corresponde.
 
-## Auth Frontend Foundation
+## Auth Frontend
 
-La primera version del login frontend y sesion temporal existe.
+El login frontend usa la sesion server-side productiva.
 
 - Ruta frontend de login: `/login`.
 - Ruta frontend de registro: `/register`.
@@ -216,20 +229,15 @@ La primera version del login frontend y sesion temporal existe.
 - Si el backend responde `409`, `/register` muestra `Ya existe una cuenta con este correo.`.
 - `/login` permite ingresar email y password.
 - `/login` consume `POST /api/auth/login`.
-- `/login` soporta `returnTo` y, despues de login exitoso, si `returnTo` valido existe muestra CTA `Continuar activación`.
-- `/login` mantiene CTA `Continuar al dashboard`.
-- `returnTo` se sanitiza: solo acepta rutas internas que empiezan con `/`, rechaza `//` y rechaza URLs absolutas `http://` o `https://`.
+- `/login` soporta `returnTo` sanitizado y redirige automaticamente con `router.replace()` a `/dashboard` o `/p/{public_id}`.
+- `returnTo` rechaza URLs externas, `//`, `/api`, `/_next`, `/login`, `/register`, valores vacios y valores demasiado largos.
 - `/login` tiene enlace `Volver al inicio`.
-- `/login` detecta si ya existe `protegid_access_token` en `sessionStorage` y muestra `Ya existe una sesión temporal activa.`.
-- Desde `/login` se puede ir a `/dashboard` o cerrar la sesion temporal con `clearSessionToken()` sin validar automaticamente contra backend.
-- Si el login es correcto, recibe `access_token` y `token_type`.
-- Guarda `access_token` temporalmente en `sessionStorage` con key `protegid_access_token`.
-- Muestra el token en un `textarea` readonly por transparencia temporal del MVP.
-- Despues de login exitoso muestra `Continuar al dashboard` y no redirige automaticamente.
+- Si ya existe sesion activa, `/login` redirige automaticamente al destino seguro.
+- Si el login es correcto, el backend setea cookies y no devuelve tokens.
+- El frontend no guarda tokens en `sessionStorage` ni `localStorage` y no muestra tokens.
 - `/login` muestra estados de carga, exito y error; `401` muestra credenciales invalidas.
 - `/dashboard` tiene enlace `Volver al inicio`.
-- `/dashboard` lee automaticamente el token con `getSessionToken()`.
-- `/dashboard` valida sesion contra `GET /api/auth/me`.
+- `/dashboard` valida sesion contra `GET /api/auth/me` usando cookie.
 - Si la sesion es valida, carga dispositivos con `GET /api/devices`.
 - Permite activar/asociar un identificador fisico desde la seccion `Activar identificador` ingresando `public_id` y `claim_code`.
 - Por cada dispositivo, consulta estado QR con `GET /api/admin/devices/{device_id}/qr`.
@@ -237,12 +245,11 @@ La primera version del login frontend y sesion temporal existe.
 - Permite seleccionar un dispositivo y cargar su perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
 - Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
-- Mantiene fallback tecnico reducido como `Usar token manual` para pegar token manualmente.
-- Tiene boton `Cerrar sesion` que limpia `sessionStorage` con `clearSessionToken()`.
-- La sesion es temporal para MVP: usa `sessionStorage`, no `localStorage`, no cookies y no refresh token.
-- No hay middleware de proteccion ni expiracion/renovacion automatica desde frontend.
-- El backend sigue validando Bearer token en endpoints privados.
-- El token vive solo durante la sesion/pestana del navegador y `sessionStorage` no se comparte entre pestanas.
+- No tiene fallback de token manual.
+- Tiene boton `Cerrar sesion` que llama `POST /api/auth/logout` con CSRF.
+- La sesion es server-side con cookie HttpOnly y CSRF double-submit.
+- No hay refresh token ni expiracion/renovacion automatica desde frontend.
+- El backend valida cookie de sesion en endpoints privados.
 
 Campos editables del perfil: `display_name`, `blood_type`, `allergies`, `allergies_none`, `medical_conditions`, `medical_conditions_none`, `medications`, `medications_none`, `emergency_contact_name`, `emergency_contact_phone`, `emergency_contact_relationship`, `notes`, `public_consent_accepted_at`, `public_consent_version` e `is_public`.
 
@@ -287,11 +294,11 @@ Validacion cubierta:
 - `returnTo` externo se descarta.
 - Build frontend OK.
 
-UX actual de `/dashboard`: validacion automatica si existe token temporal, secciones de estado de sesion, activacion de identificador, dispositivos, editor de perfil y fallback tecnico. Los dispositivos muestran `public_id`, estado legible, descripcion operacional, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
+UX actual de `/dashboard`: validacion automatica de sesion por cookie, secciones de estado de sesion, activacion de identificador, dispositivos y editor de perfil. Los dispositivos muestran `public_id`, estado legible, descripcion operacional, seleccion, gestion QR secundaria y boton claro `Editar perfil`. El editor agrupa campos en Datos personales, Informacion medica, Contacto de emergencia y Visibilidad publica. Mantiene `Guardar perfil`, `Cerrar sesion` y estados de carga, guardado, error y exito.
 
 ## Claim Code Activation Backend
 
-Sprint 14 actualiza `POST /api/devices/activate`: ya no activa solo con `public_id`. Ahora requiere token Bearer y body `public_id + claim_code`.
+Sprint 14 actualiza `POST /api/devices/activate`: ya no activa solo con `public_id`. Ahora requiere sesion autenticada y body `public_id + claim_code`; Sprint 18 agrega CSRF para este metodo mutante.
 
 - El `claim_code` viene dentro del empaque fisico.
 - El `claim_code` no va en QR/NFC, URL, logs ni respuestas API.
@@ -304,14 +311,15 @@ Sprint 14 actualiza `POST /api/devices/activate`: ya no activa solo con `public_
 - El dashboard usa `activateDeviceWithClaimCode()` y envia `public_id + claim_code`.
 - La seccion `Activar identificador` del dashboard pide `public_id` y `claim_code`, refresca la lista de dispositivos despues de activar y limpia `claim_code` del estado.
 - Errores controlados en frontend: `400` -> `Datos de activación inválidos.`, `401` -> `Sesión expirada o no autenticada.`, `404` -> `Identificador no disponible.`, `422` -> `Código de activación inválido o incompleto.`, `429` -> `Demasiados intentos. Intenta nuevamente más tarde.`.
-- `claim_code` no va en QR/NFC, no va en URL, no se guarda en `sessionStorage`, no se guarda en `localStorage`, no se loguea y no se muestra despues del envio.
-- El access token sigue siendo temporal en `sessionStorage` y el backend sigue siendo la fuente de autorizacion.
+- `claim_code` no va en QR/NFC, no va en URL, no se guarda en storage, no se loguea y no se muestra despues del envio.
+- El backend sigue siendo la fuente de autorizacion.
 
 Endpoint usado:
 
 ```http
 POST /api/devices/activate
-Authorization: Bearer <access_token>
+Cookie: protegid_session=<cookie>; protegid_csrf=<csrf>
+X-CSRF-Token: <csrf>
 Content-Type: application/json
 
 { "public_id": "PID-XXXXXXXXXX", "claim_code": "XXXX-XXXX-XXXX" }
@@ -376,7 +384,7 @@ Limites actuales:
 - Existe registro de usuario final desde primer escaneo mediante `/register?returnTo=/p/{public_id}`.
 - El boton `Crear cuenta` apunta a `/register?returnTo=/p/{public_id}`.
 - El registro no inicia sesion automaticamente; el usuario debe iniciar sesion antes de reclamar.
-- La sesion sigue siendo temporal por `sessionStorage`.
+- La sesion usa cookie HttpOnly y CSRF double-submit.
 - No hay scanner QR.
 - No hay lectura NFC real desde navegador.
 - No hay tracking.
@@ -398,7 +406,7 @@ Validacion esperada:
 - `claim_code` correcto activa device.
 - `claim_code` incorrecto muestra error controlado.
 - Dashboard activa con `public_id + claim_code`.
-- `claim_code` no queda en `sessionStorage` ni `localStorage`.
+- `claim_code` no queda en storage.
 - `GET /api/public/devices/{public_id}/activation-status` con `pending_activation` -> `200`.
 - `GET /api/public/devices/{public_id}/activation-status` con `active`, `disabled`, `lost` o inexistente -> `404`.
 - `POST /api/devices/activate` sin token -> `401`.
@@ -424,7 +432,7 @@ Sprint 11 agrega gestion QR desde `/dashboard` con descarga controlada del PNG d
 - Durante la descarga muestra `Descargando QR...`.
 - Si la descarga termina correctamente muestra `QR descargado correctamente.`.
 - Si el QR no existe, el dashboard indica `Genera el QR antes de descargarlo.`.
-- Los endpoints QR requieren Bearer token y `role=admin`.
+- Los endpoints QR requieren cookie de sesion y `role=admin`; `POST` requiere CSRF.
 - Para usuario no-admin, el dashboard no muestra `Gestión QR`, estado QR, generar/regenerar/descargar QR, `object_key` ni el mensaje `La gestión de QR requiere rol admin.`.
 - Para admin, el dashboard mantiene `Gestión QR`.
 - El backend sigue siendo la fuente de autorizacion.
@@ -448,7 +456,7 @@ Validacion esperada:
 - `GET /api/admin/devices/{device_id}/qr/download` sin token responde `401`.
 - `GET /api/admin/devices/{device_id}/qr/download` con usuario no admin responde `403`.
 - `GET /api/admin/devices/{device_id}/qr/download` con admin y QR existente responde `200` con `Content-Type: image/png`.
-- Prueba GUI: login con usuario de prueba, confirmar `protegid_access_token` en `sessionStorage`, abrir `/dashboard` en la misma pestana, confirmar carga automatica de usuario/devices y cerrar sesion.
+- Prueba GUI: login con usuario de prueba, confirmar cookies `protegid_session` HttpOnly y `protegid_csrf`, abrir/refrescar `/dashboard`, confirmar carga automatica de usuario/devices y cerrar sesion.
 - Prueba GUI de activacion: crear cuenta desde primer escaneo, login con `returnTo`, volver a `/p/{public_id}`, ingresar `claim_code`, ver `Identificador vinculado correctamente.`, ir a `/dashboard?publicId={public_id}` y completar perfil.
 - Usuario admin: ve estado QR y puede generar/regenerar QR.
 - Usuario admin: puede descargar `PID-XXXXXXXXXX.png` desde Gestion QR.
@@ -459,4 +467,4 @@ Validacion esperada:
 
 Existen Auth Foundation, Device Foundation, Public Profile Foundation, QR Foundation, Public Profile Frontend, Private Profile Management Frontend, UX Hardening & Navigation de Sprint 9, QR Management Frontend de Sprint 10, descarga controlada de QR de Sprint 11, Device Activation UX de Sprint 12, First Scan Activation Foundation de Sprint 13, Claim Code Activation Backend de Sprint 14, First Scan Onboarding Frontend de Sprint 15, User Registration Flow de Sprint 16 y Profile Readiness & Public Profile Completion de Sprint 17.
 
-Limites actuales: no hay validacion estricta de telefono internacional, wizard profesional multi-vista de onboarding de perfil, email verification, recuperacion de password, refresh token, cookies HttpOnly, middleware de proteccion, MFA, captcha, proteccion anti-bot, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend ni provisionamiento masivo con export de `claim_code`. El registro no inicia sesion automaticamente, los roles siguen siendo strings y la sesion sigue siendo temporal en `sessionStorage`. Email verification queda propuesto para un sprint posterior.
+Limites actuales: no hay validacion estricta de telefono internacional, wizard profesional multi-vista de onboarding de perfil, email verification, recuperacion de password, refresh token, MFA, captcha, proteccion anti-bot, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend ni provisionamiento masivo con export de `claim_code`. El registro no inicia sesion automaticamente y los roles siguen siendo strings. Email verification queda propuesto para un sprint posterior.
