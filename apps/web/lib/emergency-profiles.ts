@@ -1,4 +1,5 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
+import { csrfHeaders } from "@/lib/csrf";
 import type { EmergencyProfile, EmergencyProfileInput, EmergencyProfileReadiness } from "@/types/emergency-profile";
 
 export async function getEmergencyProfile(
@@ -41,6 +42,7 @@ export async function upsertEmergencyProfile(
       method: "PUT",
       credentials: "include",
       headers: {
+        ...csrfHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),

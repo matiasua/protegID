@@ -32,6 +32,9 @@ class Settings:
     session_cookie_secure: bool
     session_cookie_samesite: str
     session_cookie_path: str
+    csrf_cookie_name: str
+    csrf_header_name: str
+    csrf_token_bytes: int
 
     def __init__(self) -> None:
         self.app_env = getenv("APP_ENV", "local")
@@ -66,6 +69,9 @@ class Settings:
         )
         self.session_cookie_samesite = getenv("SESSION_COOKIE_SAMESITE", "lax")
         self.session_cookie_path = getenv("SESSION_COOKIE_PATH", "/")
+        self.csrf_cookie_name = getenv("CSRF_COOKIE_NAME", "protegid_csrf")
+        self.csrf_header_name = getenv("CSRF_HEADER_NAME", "X-CSRF-Token")
+        self.csrf_token_bytes = int(getenv("CSRF_TOKEN_BYTES", "32"))
 
     @property
     def is_local(self) -> bool:

@@ -1,4 +1,5 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
+import { csrfHeaders } from "@/lib/csrf";
 import type { AuthUser, LoginRequest, RegisterRequest, RegisterResponse } from "@/types/auth";
 
 export async function login(email: string, password: string): Promise<void> {
@@ -91,6 +92,7 @@ export async function logout(): Promise<void> {
     response = await fetch(url, {
       method: "POST",
       credentials: "include",
+      headers: csrfHeaders(),
     });
   } catch (error) {
     throw new Error("No se pudo cerrar la sesion.", { cause: error });

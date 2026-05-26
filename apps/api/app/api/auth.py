@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep
 from app.core.auth_cookies import clear_auth_session_cookie, set_auth_session_cookie
+from app.core.csrf import clear_csrf_cookie, generate_csrf_token, set_csrf_cookie
 from app.core.settings import get_settings
 from app.schemas.auth import LoginRequest, LoginResponse
 from app.schemas.user import UserCreate, UserRead
@@ -58,6 +59,7 @@ def login(
         session_token,
         max_age=get_settings().session_absolute_ttl_seconds,
     )
+    set_csrf_cookie(response, generate_csrf_token())
 
     return LoginResponse(user=UserRead.model_validate(user))
 
@@ -69,6 +71,7 @@ def logout(request: Request, response: Response, session: SessionDep) -> None:
         revoke_auth_session_by_token(session, session_token)
 
     clear_auth_session_cookie(response)
+    clear_csrf_cookie(response)
 
 
 @router.get("/me", response_model=UserRead)

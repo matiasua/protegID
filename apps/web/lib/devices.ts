@@ -1,4 +1,5 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
+import { csrfHeaders } from "@/lib/csrf";
 import type { Device } from "@/types/device";
 
 function createActivateDeviceRequestError(status: number): ApiRequestError {
@@ -72,6 +73,7 @@ export async function activateDevice(publicId: string): Promise<Device> {
       method: "POST",
       credentials: "include",
       headers: {
+        ...csrfHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -102,6 +104,7 @@ export async function activateDeviceWithClaimCode(
       method: "POST",
       credentials: "include",
       headers: {
+        ...csrfHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

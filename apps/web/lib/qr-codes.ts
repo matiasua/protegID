@@ -1,4 +1,5 @@
 import { ApiRequestError, buildApiUrl } from "@/lib/api";
+import { csrfHeaders } from "@/lib/csrf";
 import type { DeviceQrMetadata, DeviceQrStatus } from "@/types/qr-code";
 
 function createDeviceQrRequestError(status: number): ApiRequestError {
@@ -67,6 +68,7 @@ export async function createDeviceQr(
     response = await fetch(url, {
       method: "POST",
       credentials: "include",
+      headers: csrfHeaders(),
     });
   } catch {
     throw new ApiRequestError("No se pudo generar el QR.", 0);
