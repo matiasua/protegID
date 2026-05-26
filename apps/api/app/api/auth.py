@@ -1,12 +1,15 @@
 """Endpoints de autenticación."""
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep
+from app.core.auth_cookies import set_auth_session_cookie
 from app.core.security import create_access_token
+from app.core.settings import get_settings
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth import UserAlreadyExistsError, authenticate_user, register_user
+from app.services.auth_sessions import create_auth_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -27,7 +30,12 @@ def register(payload: UserCreate, session: SessionDep):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, session: SessionDep) -> TokenResponse:
+def login(
+    payload: LoginRequest,
+    session: SessionDep,
+    request: Request,
+    response: Response,
+) -> TokenResponse:
     user = authenticate_user(
         session,
         str(payload.email),
@@ -39,6 +47,18 @@ def login(payload: LoginRequest, session: SessionDep) -> TokenResponse:
             detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    _, session_token = create_auth_session(
+        session,
+        user.id,
+        user_agent=request.headers.get("user-agent"),
+        ip_address=request.client.host if request.client else None,
+    )
+    set_auth_session_cookie(
+        response,
+        session_token,
+        max_age=get_settings().session_absolute_ttl_seconds,
+    )
 
     access_token = create_access_token(subject=str(user.id))
     return TokenResponse(access_token=access_token)

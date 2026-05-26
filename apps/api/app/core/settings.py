@@ -28,6 +28,10 @@ class Settings:
     session_absolute_ttl_seconds: int
     session_token_bytes: int
     session_last_used_update_interval_seconds: int
+    session_cookie_name: str
+    session_cookie_secure: bool
+    session_cookie_samesite: str
+    session_cookie_path: str
 
     def __init__(self) -> None:
         self.app_env = getenv("APP_ENV", "local")
@@ -56,6 +60,12 @@ class Settings:
         self.session_last_used_update_interval_seconds = int(
             getenv("SESSION_LAST_USED_UPDATE_INTERVAL_SECONDS", "300")
         )
+        self.session_cookie_name = getenv("SESSION_COOKIE_NAME", "protegid_session")
+        self.session_cookie_secure = (
+            getenv("SESSION_COOKIE_SECURE", "false").strip().lower() == "true"
+        )
+        self.session_cookie_samesite = getenv("SESSION_COOKIE_SAMESITE", "lax")
+        self.session_cookie_path = getenv("SESSION_COOKIE_PATH", "/")
 
     @property
     def is_local(self) -> bool:
