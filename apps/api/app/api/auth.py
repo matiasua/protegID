@@ -4,9 +4,8 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep
 from app.core.auth_cookies import clear_auth_session_cookie, set_auth_session_cookie
-from app.core.security import create_access_token
 from app.core.settings import get_settings
-from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.auth import LoginRequest, LoginResponse
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth import UserAlreadyExistsError, authenticate_user, register_user
 from app.services.auth_sessions import create_auth_session, revoke_auth_session_by_token
@@ -29,13 +28,13 @@ def register(payload: UserCreate, session: SessionDep):
         ) from None
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=LoginResponse)
 def login(
     payload: LoginRequest,
     session: SessionDep,
     request: Request,
     response: Response,
-) -> TokenResponse:
+) -> LoginResponse:
     user = authenticate_user(
         session,
         str(payload.email),
@@ -60,8 +59,7 @@ def login(
         max_age=get_settings().session_absolute_ttl_seconds,
     )
 
-    access_token = create_access_token(subject=str(user.id))
-    return TokenResponse(access_token=access_token)
+    return LoginResponse(user=UserRead.model_validate(user))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
