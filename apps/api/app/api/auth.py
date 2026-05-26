@@ -3,13 +3,13 @@
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep
-from app.core.auth_cookies import set_auth_session_cookie
+from app.core.auth_cookies import clear_auth_session_cookie, set_auth_session_cookie
 from app.core.security import create_access_token
 from app.core.settings import get_settings
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth import UserAlreadyExistsError, authenticate_user, register_user
-from app.services.auth_sessions import create_auth_session
+from app.services.auth_sessions import create_auth_session, revoke_auth_session_by_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -62,6 +62,15 @@ def login(
 
     access_token = create_access_token(subject=str(user.id))
     return TokenResponse(access_token=access_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(request: Request, response: Response, session: SessionDep) -> None:
+    session_token = request.cookies.get(get_settings().session_cookie_name)
+    if session_token:
+        revoke_auth_session_by_token(session, session_token)
+
+    clear_auth_session_cookie(response)
 
 
 @router.get("/me", response_model=UserRead)
