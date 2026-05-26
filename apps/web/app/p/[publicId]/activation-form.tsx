@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { ApiRequestError } from "@/lib/api";
+import { getCurrentUser } from "@/lib/auth";
 import { activateDeviceWithClaimCode } from "@/lib/devices";
-import { getSessionToken } from "@/lib/session";
 
 type ActivationFormProps = {
   publicId: string;
@@ -16,7 +16,7 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
   const loginHref = `/login?returnTo=${activationPath}`;
   const registerHref = `/register?returnTo=${activationPath}`;
   const dashboardHref = `/dashboard?publicId=${encodeURIComponent(publicId)}`;
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [hasSession, setHasSession] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [claimCode, setClaimCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -24,14 +24,16 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
   const [isActivating, setIsActivating] = useState(false);
 
   useEffect(() => {
-    setAccessToken(getSessionToken());
-    setSessionChecked(true);
+    getCurrentUser()
+      .then(() => setHasSession(true))
+      .catch(() => setHasSession(false))
+      .finally(() => setSessionChecked(true));
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!accessToken || isActivating) {
+    if (!hasSession || isActivating) {
       return;
     }
 
@@ -48,10 +50,13 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
     setIsActivating(true);
 
     try {
-      await activateDeviceWithClaimCode(publicId, submittedClaimCode, accessToken);
+      await activateDeviceWithClaimCode(publicId, submittedClaimCode);
       setSuccessMessage("Identificador vinculado correctamente.");
     } catch (error) {
       if (error instanceof ApiRequestError) {
+        if (error.status === 401) {
+          setHasSession(false);
+        }
         setErrorMessage(error.message);
       } else {
         setErrorMessage("No se pudo activar el identificador.");
@@ -65,7 +70,7 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
     return <p className="text-sm text-slate-500">Verificando sesión...</p>;
   }
 
-  if (!accessToken) {
+  if (!hasSession) {
     return (
       <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div>

@@ -35,7 +35,6 @@ function createDeviceQrDownloadRequestError(status: number): ApiRequestError {
 
 export async function getDeviceQrStatus(
   deviceId: string,
-  accessToken: string,
 ): Promise<DeviceQrStatus> {
   const url = buildApiUrl(`/api/admin/devices/${encodeURIComponent(deviceId)}/qr`);
 
@@ -44,9 +43,7 @@ export async function getDeviceQrStatus(
   try {
     response = await fetch(url, {
       cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      credentials: "include",
     });
   } catch {
     throw new ApiRequestError("No se pudo consultar el estado del QR.", 0);
@@ -61,7 +58,6 @@ export async function getDeviceQrStatus(
 
 export async function createDeviceQr(
   deviceId: string,
-  accessToken: string,
 ): Promise<DeviceQrMetadata> {
   const url = buildApiUrl(`/api/admin/devices/${encodeURIComponent(deviceId)}/qr`);
 
@@ -70,9 +66,7 @@ export async function createDeviceQr(
   try {
     response = await fetch(url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      credentials: "include",
     });
   } catch {
     throw new ApiRequestError("No se pudo generar el QR.", 0);
@@ -87,7 +81,6 @@ export async function createDeviceQr(
 
 export async function downloadDeviceQr(
   deviceId: string,
-  accessToken: string,
 ): Promise<Blob> {
   const url = buildApiUrl(
     `/api/admin/devices/${encodeURIComponent(deviceId)}/qr/download`,
@@ -98,9 +91,7 @@ export async function downloadDeviceQr(
   try {
     response = await fetch(url, {
       cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      credentials: "include",
     });
   } catch {
     throw new ApiRequestError("No se pudo descargar el QR.", 0);
