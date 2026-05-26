@@ -6,11 +6,10 @@ import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, logout } from "@/lib/auth";
 import { activateDeviceWithClaimCode, getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, getEmergencyProfileReadiness, upsertEmergencyProfile } from "@/lib/emergency-profiles";
 import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
-import { clearSessionToken, getSessionToken } from "@/lib/session";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
 import type { EmergencyProfile, EmergencyProfileInput, EmergencyProfileReadiness } from "@/types/emergency-profile";
@@ -53,11 +52,6 @@ type ProfileFieldConfig = {
   multiline?: boolean;
   noneField?: ProfileDecisionFieldName;
   noneLabel?: string;
-};
-
-type ValidateSessionOptions = {
-  clearStoredTokenOnFailure?: boolean;
-  updateTokenInput?: boolean;
 };
 
 type DeviceQrActionMessage = {
@@ -124,7 +118,7 @@ const PROFILE_FIELD_GROUPS: ProfileFieldGroup[] = [
 
 function getValidationErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
-    return "Token inválido, expirado o sin permisos para acceder al panel.";
+    return "Sesión inválida, expirada o sin permisos para acceder al panel.";
   }
 
   if (error instanceof Error) {
@@ -503,7 +497,6 @@ function getDeviceStatusClass(status: Device["status"]): string {
 function DashboardContent() {
   const searchParams = useSearchParams();
   const requestedPublicId = searchParams.get("publicId")?.trim() ?? "";
-  const [accessToken, setAccessToken] = useState("");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [qrStatusByDeviceId, setQrStatusByDeviceId] = useState<Record<string, DeviceQrStatusState>>({});
@@ -520,7 +513,7 @@ function DashboardContent() {
   const [qrAdminMessage, setQrAdminMessage] = useState<string | null>(null);
   const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(null);
   const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
-  const [hasCheckedStoredSession, setHasCheckedStoredSession] = useState(false);
+  const [hasCheckedSession, setHasCheckedSession] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [isActivatingDevice, setIsActivatingDevice] = useState(false);
@@ -532,17 +525,7 @@ function DashboardContent() {
   const canManageQr = currentUserIsAdmin && qrPermissionMessage === null;
 
   useEffect(() => {
-    const storedToken = getSessionToken();
-
-    if (!storedToken) {
-      setHasCheckedStoredSession(true);
-      return;
-    }
-
-    void validateAccessToken(storedToken, {
-      clearStoredTokenOnFailure: true,
-      updateTokenInput: true,
-    }).finally(() => setHasCheckedStoredSession(true));
+    void loadAuthenticatedDashboard().finally(() => setHasCheckedSession(true));
   }, []);
 
   useEffect(() => {
@@ -624,7 +607,7 @@ function DashboardContent() {
     }));
   }
 
-  async function validateAccessToken(token: string, options: ValidateSessionOptions = {}) {
+  async function loadAuthenticatedDashboard() {
     let validatedUser: AuthUser | null = null;
 
     setErrorMessage(null);
@@ -632,27 +615,13 @@ function DashboardContent() {
     setQrAdminMessage(null);
     resetAuthenticatedState();
 
-    if (options.updateTokenInput) {
-      setAccessToken(token);
-    }
-
-    if (!token) {
-      setErrorMessage("Pega un access token antes de validar la sesión.");
-      return;
-    }
-
     setIsValidating(true);
 
     try {
-      const user = await getCurrentUser(token);
+      const user = await getCurrentUser();
       validatedUser = user;
       setCurrentUser(user);
     } catch (error) {
-      if (options.clearStoredTokenOnFailure) {
-        clearSessionToken();
-        setAccessToken("");
-      }
-
       setErrorMessage(getValidationErrorMessage(error));
       return;
     } finally {
@@ -662,11 +631,11 @@ function DashboardContent() {
     setIsLoadingDevices(true);
 
     try {
-      const userDevices = await getMyDevices(token);
+      const userDevices = await getMyDevices();
       setDevices(userDevices);
 
       if (isAdminUser(validatedUser)) {
-        void loadDeviceQrStatuses(userDevices, token);
+        void loadDeviceQrStatuses(userDevices);
       } else {
         setQrStatusByDeviceId({});
       }
@@ -677,7 +646,7 @@ function DashboardContent() {
     }
   }
 
-  async function loadDeviceQrStatuses(userDevices: Device[], token: string) {
+  async function loadDeviceQrStatuses(userDevices: Device[]) {
     if (userDevices.length === 0) {
       setQrStatusByDeviceId({});
       return;
@@ -688,7 +657,7 @@ function DashboardContent() {
     await Promise.all(
       userDevices.map(async (device) => {
         try {
-          const qrStatus = await getDeviceQrStatus(device.id, token);
+          const qrStatus = await getDeviceQrStatus(device.id);
           setQrStatusByDeviceId((currentStatuses) => ({
             ...currentStatuses,
             [device.id]: {
@@ -722,9 +691,7 @@ function DashboardContent() {
   }
 
   async function handleGenerateDeviceQr(device: Device) {
-    const token = accessToken.trim();
-
-    if (!token || !currentUser) {
+    if (!currentUser) {
       setQrStatusByDeviceId((currentStatuses) => ({
         ...currentStatuses,
         [device.id]: {
@@ -773,7 +740,7 @@ function DashboardContent() {
     }));
 
     try {
-      const qrMetadata = await createDeviceQr(device.id, token);
+      const qrMetadata = await createDeviceQr(device.id);
       setQrStatusByDeviceId((currentStatuses) => ({
         ...currentStatuses,
         [device.id]: {
@@ -816,9 +783,7 @@ function DashboardContent() {
   }
 
   async function handleDownloadDeviceQr(device: Device) {
-    const token = accessToken.trim();
-
-    if (!token || !currentUser) {
+    if (!currentUser) {
       setQrStatusByDeviceId((currentStatuses) => ({
         ...currentStatuses,
         [device.id]: {
@@ -885,7 +850,7 @@ function DashboardContent() {
     }));
 
     try {
-      const qrBlob = await downloadDeviceQr(device.id, token);
+      const qrBlob = await downloadDeviceQr(device.id);
       const objectUrl = URL.createObjectURL(qrBlob);
       const link = document.createElement("a");
 
@@ -943,15 +908,9 @@ function DashboardContent() {
     }
   }
 
-  async function handleValidateSession(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await validateAccessToken(accessToken.trim());
-  }
-
   async function handleActivateIdentifier(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const token = accessToken.trim();
     const publicId = activationPublicId.trim();
     const claimCode = activationClaimCode.trim();
 
@@ -959,7 +918,7 @@ function DashboardContent() {
     setActivationSuccessMessage(null);
     setActivationClaimCode("");
 
-    if (!token) {
+    if (!currentUser) {
       setActivationErrorMessage("Sesión expirada o no autenticada.");
       return;
     }
@@ -977,16 +936,16 @@ function DashboardContent() {
     setIsActivatingDevice(true);
 
     try {
-      await activateDeviceWithClaimCode(publicId, claimCode, token);
+      await activateDeviceWithClaimCode(publicId, claimCode);
       setActivationPublicId("");
       setActivationSuccessMessage("Identificador vinculado correctamente. Completa el perfil de emergencia para que sea útil al escanearlo.");
 
       try {
-        const userDevices = await getMyDevices(token);
+        const userDevices = await getMyDevices();
         setDevices(userDevices);
 
         if (isAdminUser(currentUser)) {
-          void loadDeviceQrStatuses(userDevices, token);
+          void loadDeviceQrStatuses(userDevices);
         } else {
           setQrStatusByDeviceId({});
         }
@@ -1000,9 +959,8 @@ function DashboardContent() {
     }
   }
 
-  function handleLogout() {
-    clearSessionToken();
-    setAccessToken("");
+  async function handleLogout() {
+    await logout();
     setErrorMessage(null);
     setDeviceErrorMessage(null);
     setQrAdminMessage(null);
@@ -1010,7 +968,6 @@ function DashboardContent() {
   }
 
   async function handleEditProfile(device: Device) {
-    const token = accessToken.trim();
     setSelectedDevice(device);
     setProfileForm(createEmptyProfileForm());
     setProfileReadiness(null);
@@ -1018,8 +975,8 @@ function DashboardContent() {
     setProfileErrorMessage(null);
     setProfileSuccessMessage(null);
 
-    if (!token) {
-      setProfileErrorMessage("Valida la sesión antes de editar un perfil.");
+    if (!currentUser) {
+      setProfileErrorMessage("Inicia sesión antes de editar un perfil.");
       return;
     }
 
@@ -1028,8 +985,8 @@ function DashboardContent() {
 
     try {
       const [profile, readiness] = await Promise.all([
-        getEmergencyProfile(device.id, token),
-        getEmergencyProfileReadiness(device.id, token),
+        getEmergencyProfile(device.id),
+        getEmergencyProfileReadiness(device.id),
       ]);
 
       setProfileReadiness(readiness);
@@ -1058,10 +1015,8 @@ function DashboardContent() {
       return;
     }
 
-    const token = accessToken.trim();
-
-    if (!token) {
-      setProfileErrorMessage("Valida la sesión antes de guardar el perfil.");
+    if (!currentUser) {
+      setProfileErrorMessage("Inicia sesión antes de guardar el perfil.");
       return;
     }
 
@@ -1070,8 +1025,8 @@ function DashboardContent() {
     setIsSavingProfile(true);
 
     try {
-      const savedProfile = await upsertEmergencyProfile(selectedDevice.id, createProfilePayload(profileForm), token);
-      const readiness = await getEmergencyProfileReadiness(selectedDevice.id, token);
+      const savedProfile = await upsertEmergencyProfile(selectedDevice.id, createProfilePayload(profileForm));
+      const readiness = await getEmergencyProfileReadiness(selectedDevice.id);
       setProfileForm(createProfileForm(savedProfile));
       setProfileReadiness(readiness);
       setHasExistingProfile(true);
@@ -1105,12 +1060,12 @@ function DashboardContent() {
               <p className="mt-6 text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Área privada</p>
               <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Panel privado ProtegID</h1>
               <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-                Gestiona tus dispositivos y el perfil de emergencia asociado. La sesión sigue siendo temporal y se guarda en sessionStorage durante la sesión del navegador.
+                Gestiona tus dispositivos y el perfil de emergencia asociado. La sesión se mantiene con una cookie HttpOnly emitida por el backend.
               </p>
             </div>
 
             <span className="w-fit rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-sky-800">
-              Sesión temporal
+              Sesión segura
             </span>
           </div>
         </section>
@@ -1125,21 +1080,21 @@ function DashboardContent() {
             </div>
 
             {currentUser ? (
-              <Button className="w-full sm:w-auto" onClick={handleLogout} type="button" variant="outline">
+              <Button className="w-full sm:w-auto" onClick={() => void handleLogout()} type="button" variant="outline">
                 Cerrar sesión
               </Button>
             ) : null}
           </div>
 
-          {!hasCheckedStoredSession ? (
+          {!hasCheckedSession ? (
             <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-              Revisando sesión temporal...
+              Revisando sesión...
             </p>
           ) : null}
 
           {isValidating ? (
             <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-              Validando token contra la API...
+              Validando sesión contra la API...
             </p>
           ) : null}
 
@@ -1170,11 +1125,11 @@ function DashboardContent() {
             </dl>
           ) : null}
 
-          {hasCheckedStoredSession && !isValidating && !currentUser ? (
+          {hasCheckedSession && !isValidating && !currentUser ? (
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               {!errorMessage ? (
                 <p className="text-sm leading-6 text-slate-600">
-                  Aún no hay una sesión temporal activa. Inicia sesión para guardar el token en sessionStorage o usa el fallback manual.
+                  Aún no hay una sesión activa. Inicia sesión para acceder al panel privado.
                 </p>
               ) : null}
               <Button asChild className="mt-4 w-full sm:w-auto">
@@ -1182,35 +1137,6 @@ function DashboardContent() {
               </Button>
             </div>
           ) : null}
-
-          <details className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-slate-800">Usar token manual</summary>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              Puedes pegar un access token manualmente mientras el flujo de sesión sigue siendo temporal.
-            </p>
-
-            <form className="mt-4 space-y-4" onSubmit={handleValidateSession}>
-              <div>
-                <label className="text-sm font-medium text-slate-700" htmlFor="access-token">
-                  Access token
-                </label>
-                <textarea
-                  className="mt-2 min-h-32 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                  id="access-token"
-                  onChange={(event) => setAccessToken(event.target.value)}
-                  placeholder="Pega aquí el access token temporal"
-                  value={accessToken}
-                />
-                <p className="mt-2 text-sm text-slate-500">
-                  El token manual se conserva solo en el estado de esta página. No se guarda en localStorage ni cookies.
-                </p>
-              </div>
-
-              <Button disabled={isValidating || isLoadingDevices} type="submit" variant="outline">
-                {isValidating ? "Validando..." : "Validar sesión"}
-              </Button>
-            </form>
-          </details>
         </section>
 
         {currentUser ? (
@@ -1339,7 +1265,6 @@ function DashboardContent() {
                   const isQrDownloadDisabled =
                     !canManageQr ||
                     !canOperateDevice ||
-                    accessToken.trim().length === 0 ||
                     !qrStatusState ||
                     qrStatusState.isLoading ||
                     qrStatusState.isGenerating ||
@@ -1488,7 +1413,7 @@ function DashboardContent() {
                       <Button
                         className="w-full sm:w-auto"
                         disabled={!canOperateDevice || isLoadingProfile || isSavingProfile}
-                        onClick={() => handleEditProfile(device)}
+                        onClick={() => void handleEditProfile(device)}
                         type="button"
                         variant={isSelectedDevice ? "default" : "outline"}
                       >

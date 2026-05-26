@@ -1,4 +1,5 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
+import { csrfHeaders } from "@/lib/csrf";
 import type { Device } from "@/types/device";
 
 function createActivateDeviceRequestError(status: number): ApiRequestError {
@@ -41,7 +42,7 @@ function createActivateDeviceWithClaimCodeRequestError(status: number): ApiReque
   return new ApiRequestError("No se pudo activar el identificador.", status);
 }
 
-export async function getMyDevices(accessToken: string): Promise<Device[]> {
+export async function getMyDevices(): Promise<Device[]> {
   const url = buildApiUrl("/api/devices");
 
   let response: Response;
@@ -49,9 +50,7 @@ export async function getMyDevices(accessToken: string): Promise<Device[]> {
   try {
     response = await fetch(url, {
       cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      credentials: "include",
     });
   } catch (error) {
     throw new Error("No se pudieron consultar los dispositivos.", { cause: error });
@@ -64,7 +63,7 @@ export async function getMyDevices(accessToken: string): Promise<Device[]> {
   return (await response.json()) as Device[];
 }
 
-export async function activateDevice(publicId: string, accessToken: string): Promise<Device> {
+export async function activateDevice(publicId: string): Promise<Device> {
   const url = buildApiUrl("/api/devices/activate");
 
   let response: Response;
@@ -72,8 +71,9 @@ export async function activateDevice(publicId: string, accessToken: string): Pro
   try {
     response = await fetch(url, {
       method: "POST",
+      credentials: "include",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        ...csrfHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -94,7 +94,6 @@ export async function activateDevice(publicId: string, accessToken: string): Pro
 export async function activateDeviceWithClaimCode(
   publicId: string,
   claimCode: string,
-  accessToken: string,
 ): Promise<Device> {
   const url = buildApiUrl("/api/devices/activate");
 
@@ -103,8 +102,9 @@ export async function activateDeviceWithClaimCode(
   try {
     response = await fetch(url, {
       method: "POST",
+      credentials: "include",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        ...csrfHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

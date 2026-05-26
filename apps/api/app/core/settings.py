@@ -25,6 +25,16 @@ class Settings:
     jwt_secret_key: str
     jwt_algorithm: str
     access_token_expire_minutes: int
+    session_absolute_ttl_seconds: int
+    session_token_bytes: int
+    session_last_used_update_interval_seconds: int
+    session_cookie_name: str
+    session_cookie_secure: bool
+    session_cookie_samesite: str
+    session_cookie_path: str
+    csrf_cookie_name: str
+    csrf_header_name: str
+    csrf_token_bytes: int
 
     def __init__(self) -> None:
         self.app_env = getenv("APP_ENV", "local")
@@ -46,6 +56,22 @@ class Settings:
         self.access_token_expire_minutes = int(
             getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
         )
+        self.session_absolute_ttl_seconds = int(
+            getenv("SESSION_ABSOLUTE_TTL_SECONDS", "604800")
+        )
+        self.session_token_bytes = int(getenv("SESSION_TOKEN_BYTES", "32"))
+        self.session_last_used_update_interval_seconds = int(
+            getenv("SESSION_LAST_USED_UPDATE_INTERVAL_SECONDS", "300")
+        )
+        self.session_cookie_name = getenv("SESSION_COOKIE_NAME", "protegid_session")
+        self.session_cookie_secure = (
+            getenv("SESSION_COOKIE_SECURE", "false").strip().lower() == "true"
+        )
+        self.session_cookie_samesite = getenv("SESSION_COOKIE_SAMESITE", "lax")
+        self.session_cookie_path = getenv("SESSION_COOKIE_PATH", "/")
+        self.csrf_cookie_name = getenv("CSRF_COOKIE_NAME", "protegid_csrf")
+        self.csrf_header_name = getenv("CSRF_HEADER_NAME", "X-CSRF-Token")
+        self.csrf_token_bytes = int(getenv("CSRF_TOKEN_BYTES", "32"))
 
     @property
     def is_local(self) -> bool:

@@ -1,9 +1,9 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
+import { csrfHeaders } from "@/lib/csrf";
 import type { EmergencyProfile, EmergencyProfileInput, EmergencyProfileReadiness } from "@/types/emergency-profile";
 
 export async function getEmergencyProfile(
   deviceId: string,
-  accessToken: string,
 ): Promise<EmergencyProfile | null> {
   const url = buildApiUrl(`/api/devices/${encodeURIComponent(deviceId)}/emergency-profile`);
 
@@ -12,9 +12,7 @@ export async function getEmergencyProfile(
   try {
     response = await fetch(url, {
       cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      credentials: "include",
     });
   } catch (error) {
     throw new Error("No se pudo consultar el perfil de emergencia.", { cause: error });
@@ -34,7 +32,6 @@ export async function getEmergencyProfile(
 export async function upsertEmergencyProfile(
   deviceId: string,
   payload: EmergencyProfileInput,
-  accessToken: string,
 ): Promise<EmergencyProfile> {
   const url = buildApiUrl(`/api/devices/${encodeURIComponent(deviceId)}/emergency-profile`);
 
@@ -43,8 +40,9 @@ export async function upsertEmergencyProfile(
   try {
     response = await fetch(url, {
       method: "PUT",
+      credentials: "include",
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        ...csrfHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
@@ -62,7 +60,6 @@ export async function upsertEmergencyProfile(
 
 export async function getEmergencyProfileReadiness(
   deviceId: string,
-  accessToken: string,
 ): Promise<EmergencyProfileReadiness> {
   const url = buildApiUrl(`/api/devices/${encodeURIComponent(deviceId)}/emergency-profile/readiness`);
 
@@ -71,9 +68,7 @@ export async function getEmergencyProfileReadiness(
   try {
     response = await fetch(url, {
       cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      credentials: "include",
     });
   } catch (error) {
     throw new Error("No se pudo consultar el estado del perfil.", { cause: error });
