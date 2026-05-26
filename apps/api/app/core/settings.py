@@ -25,6 +25,9 @@ class Settings:
     jwt_secret_key: str
     jwt_algorithm: str
     access_token_expire_minutes: int
+    session_absolute_ttl_seconds: int
+    session_token_bytes: int
+    session_last_used_update_interval_seconds: int
 
     def __init__(self) -> None:
         self.app_env = getenv("APP_ENV", "local")
@@ -45,6 +48,13 @@ class Settings:
         self.jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
         self.access_token_expire_minutes = int(
             getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
+        )
+        self.session_absolute_ttl_seconds = int(
+            getenv("SESSION_ABSOLUTE_TTL_SECONDS", "604800")
+        )
+        self.session_token_bytes = int(getenv("SESSION_TOKEN_BYTES", "32"))
+        self.session_last_used_update_interval_seconds = int(
+            getenv("SESSION_LAST_USED_UPDATE_INTERVAL_SECONDS", "300")
         )
 
     @property
