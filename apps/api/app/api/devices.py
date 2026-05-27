@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.dependencies import CurrentUserDep, SessionDep
+from app.api.dependencies import CurrentUserDep, SessionDep, VerifiedEmailDep
 from app.repositories.devices import get_device_by_public_id, get_devices_by_user_id
 from app.schemas.device import DeviceActivate, DeviceCreate, DeviceRead
 from app.services.claim_codes import verify_claim_code
@@ -25,7 +25,7 @@ def list_devices(session: SessionDep, current_user: CurrentUserDep):
 def activate_device(
     payload: DeviceActivate,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: VerifiedEmailDep,
 ):
     device = get_device_by_public_id(session, payload.public_id)
     if device is None:
@@ -81,7 +81,7 @@ def activate_device(
 )
 def create_admin_device(
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: VerifiedEmailDep,
     payload: DeviceCreate | None = None,
 ):
     if current_user.role != "admin":
