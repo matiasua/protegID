@@ -1,6 +1,13 @@
 """Schemas Pydantic de ProtegID."""
 
-from app.schemas.auth import LoginRequest, LoginResponse
+from app.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    RegisterResponse,
+    ResendVerificationResponse,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
+)
 from app.schemas.device import DeviceActivate, DeviceCreate, DeviceRead
 from app.schemas.emergency_profile import (
     EmergencyProfileCreate,
@@ -23,6 +30,10 @@ __all__ = [
     "EmergencyProfileUpdate",
     "LoginRequest",
     "LoginResponse",
+    "RegisterResponse",
+    "ResendVerificationResponse",
     "UserCreate",
     "UserRead",
+    "VerifyEmailRequest",
+    "VerifyEmailResponse",
 ]

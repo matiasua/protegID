@@ -1,5 +1,6 @@
 """Repositorio de usuarios."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -42,3 +43,22 @@ def create_user(
     session.commit()
     session.refresh(user)
     return user
+
+
+def mark_user_email_verified(
+    session: Session, user: User, verified_at: datetime | None = None
+) -> None:
+    if user.email_verified_at is not None:
+        return
+
+    user.email_verified_at = verified_at or datetime.now(UTC)
+    session.commit()
+    session.refresh(user)
+
+
+def update_user_email_verification_sent_at(
+    session: Session, user: User, sent_at: datetime | None = None
+) -> None:
+    user.email_verification_sent_at = sent_at or datetime.now(UTC)
+    session.commit()
+    session.refresh(user)
