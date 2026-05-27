@@ -22,6 +22,15 @@ class Settings:
     public_app_url: str
     public_profile_path: str
     public_profile_consent_version: str
+    email_verification_token_ttl_seconds: int
+    action_token_bytes: int
+    email_delivery_mode: str
+    smtp_host: str
+    smtp_port: int
+    smtp_username: str
+    smtp_password: str
+    smtp_from_email: str
+    smtp_from_name: str
     jwt_secret_key: str
     jwt_algorithm: str
     access_token_expire_minutes: int
@@ -51,6 +60,17 @@ class Settings:
         self.public_profile_consent_version = getenv(
             "PUBLIC_PROFILE_CONSENT_VERSION", "2026-05-v1"
         )
+        self.email_verification_token_ttl_seconds = int(
+            getenv("EMAIL_VERIFICATION_TOKEN_TTL_SECONDS", "86400")
+        )
+        self.action_token_bytes = int(getenv("ACTION_TOKEN_BYTES", "32"))
+        self.email_delivery_mode = getenv("EMAIL_DELIVERY_MODE", "console")
+        self.smtp_host = getenv("SMTP_HOST", "")
+        self.smtp_port = int(getenv("SMTP_PORT", "587"))
+        self.smtp_username = getenv("SMTP_USERNAME", "")
+        self.smtp_password = getenv("SMTP_PASSWORD", "")
+        self.smtp_from_email = getenv("SMTP_FROM_EMAIL", "no-reply@protegid.local")
+        self.smtp_from_name = getenv("SMTP_FROM_NAME", "ProtegID")
         self.jwt_secret_key = getenv("JWT_SECRET_KEY", "")
         self.jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
         self.access_token_expire_minutes = int(
