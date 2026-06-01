@@ -44,6 +44,28 @@ class Settings:
     csrf_cookie_name: str
     csrf_header_name: str
     csrf_token_bytes: int
+    rate_limit_login_ip_limit: int
+    rate_limit_login_ip_window_seconds: int
+    rate_limit_login_email_limit: int
+    rate_limit_login_email_window_seconds: int
+    rate_limit_register_ip_limit: int
+    rate_limit_register_ip_window_seconds: int
+    rate_limit_register_email_limit: int
+    rate_limit_register_email_window_seconds: int
+    rate_limit_resend_verification_ip_limit: int
+    rate_limit_resend_verification_ip_window_seconds: int
+    rate_limit_resend_verification_user_limit: int
+    rate_limit_resend_verification_user_window_seconds: int
+    rate_limit_verify_email_ip_limit: int
+    rate_limit_verify_email_ip_window_seconds: int
+    rate_limit_device_activate_ip_limit: int
+    rate_limit_device_activate_ip_window_seconds: int
+    rate_limit_device_activate_public_id_limit: int
+    rate_limit_device_activate_public_id_window_seconds: int
+    rate_limit_public_lookup_ip_limit: int
+    rate_limit_public_lookup_ip_window_seconds: int
+    rate_limit_public_lookup_public_id_limit: int
+    rate_limit_public_lookup_public_id_window_seconds: int
 
     def __init__(self) -> None:
         self.app_env = getenv("APP_ENV", "local")
@@ -92,6 +114,70 @@ class Settings:
         self.csrf_cookie_name = getenv("CSRF_COOKIE_NAME", "protegid_csrf")
         self.csrf_header_name = getenv("CSRF_HEADER_NAME", "X-CSRF-Token")
         self.csrf_token_bytes = int(getenv("CSRF_TOKEN_BYTES", "32"))
+        self.rate_limit_login_ip_limit = int(getenv("RATE_LIMIT_LOGIN_IP_LIMIT", "20"))
+        self.rate_limit_login_ip_window_seconds = int(
+            getenv("RATE_LIMIT_LOGIN_IP_WINDOW_SECONDS", "300")
+        )
+        self.rate_limit_login_email_limit = int(
+            getenv("RATE_LIMIT_LOGIN_EMAIL_LIMIT", "10")
+        )
+        self.rate_limit_login_email_window_seconds = int(
+            getenv("RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS", "300")
+        )
+        self.rate_limit_register_ip_limit = int(
+            getenv("RATE_LIMIT_REGISTER_IP_LIMIT", "10")
+        )
+        self.rate_limit_register_ip_window_seconds = int(
+            getenv("RATE_LIMIT_REGISTER_IP_WINDOW_SECONDS", "3600")
+        )
+        self.rate_limit_register_email_limit = int(
+            getenv("RATE_LIMIT_REGISTER_EMAIL_LIMIT", "3")
+        )
+        self.rate_limit_register_email_window_seconds = int(
+            getenv("RATE_LIMIT_REGISTER_EMAIL_WINDOW_SECONDS", "3600")
+        )
+        self.rate_limit_resend_verification_ip_limit = int(
+            getenv("RATE_LIMIT_RESEND_VERIFICATION_IP_LIMIT", "10")
+        )
+        self.rate_limit_resend_verification_ip_window_seconds = int(
+            getenv("RATE_LIMIT_RESEND_VERIFICATION_IP_WINDOW_SECONDS", "3600")
+        )
+        self.rate_limit_resend_verification_user_limit = int(
+            getenv("RATE_LIMIT_RESEND_VERIFICATION_USER_LIMIT", "3")
+        )
+        self.rate_limit_resend_verification_user_window_seconds = int(
+            getenv("RATE_LIMIT_RESEND_VERIFICATION_USER_WINDOW_SECONDS", "3600")
+        )
+        self.rate_limit_verify_email_ip_limit = int(
+            getenv("RATE_LIMIT_VERIFY_EMAIL_IP_LIMIT", "30")
+        )
+        self.rate_limit_verify_email_ip_window_seconds = int(
+            getenv("RATE_LIMIT_VERIFY_EMAIL_IP_WINDOW_SECONDS", "300")
+        )
+        self.rate_limit_device_activate_ip_limit = int(
+            getenv("RATE_LIMIT_DEVICE_ACTIVATE_IP_LIMIT", "20")
+        )
+        self.rate_limit_device_activate_ip_window_seconds = int(
+            getenv("RATE_LIMIT_DEVICE_ACTIVATE_IP_WINDOW_SECONDS", "300")
+        )
+        self.rate_limit_device_activate_public_id_limit = int(
+            getenv("RATE_LIMIT_DEVICE_ACTIVATE_PUBLIC_ID_LIMIT", "10")
+        )
+        self.rate_limit_device_activate_public_id_window_seconds = int(
+            getenv("RATE_LIMIT_DEVICE_ACTIVATE_PUBLIC_ID_WINDOW_SECONDS", "300")
+        )
+        self.rate_limit_public_lookup_ip_limit = int(
+            getenv("RATE_LIMIT_PUBLIC_LOOKUP_IP_LIMIT", "120")
+        )
+        self.rate_limit_public_lookup_ip_window_seconds = int(
+            getenv("RATE_LIMIT_PUBLIC_LOOKUP_IP_WINDOW_SECONDS", "300")
+        )
+        self.rate_limit_public_lookup_public_id_limit = int(
+            getenv("RATE_LIMIT_PUBLIC_LOOKUP_PUBLIC_ID_LIMIT", "60")
+        )
+        self.rate_limit_public_lookup_public_id_window_seconds = int(
+            getenv("RATE_LIMIT_PUBLIC_LOOKUP_PUBLIC_ID_WINDOW_SECONDS", "300")
+        )
 
     @property
     def is_local(self) -> bool:

@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep, VerifiedEmailDep
+from app.core.rate_limit import check_rate_limit, get_client_ip
+from app.core.settings import get_settings
 from app.repositories.devices import get_device_by_public_id, get_devices_by_user_id
 from app.schemas.device import DeviceActivate, DeviceCreate, DeviceRead
 from app.services.claim_codes import verify_claim_code
@@ -26,7 +28,22 @@ def activate_device(
     payload: DeviceActivate,
     session: SessionDep,
     current_user: VerifiedEmailDep,
+    request: Request,
 ):
+    settings = get_settings()
+    client_ip = get_client_ip(request)
+    public_id = payload.public_id.strip().upper()
+    check_rate_limit(
+        f"rl:devices:activate:ip:{client_ip}",
+        settings.rate_limit_device_activate_ip_limit,
+        settings.rate_limit_device_activate_ip_window_seconds,
+    )
+    check_rate_limit(
+        f"rl:devices:activate:public_id:{public_id}",
+        settings.rate_limit_device_activate_public_id_limit,
+        settings.rate_limit_device_activate_public_id_window_seconds,
+    )
+
     device = get_device_by_public_id(session, payload.public_id)
     if device is None:
         raise HTTPException(

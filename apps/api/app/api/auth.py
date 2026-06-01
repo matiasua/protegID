@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from app.api.dependencies import CurrentUserDep, SessionDep
 from app.core.auth_cookies import clear_auth_session_cookie, set_auth_session_cookie
 from app.core.csrf import clear_csrf_cookie, generate_csrf_token, set_csrf_cookie
+from app.core.rate_limit import check_rate_limit, get_client_ip, hash_rate_limit_value
 from app.core.settings import get_settings
 from app.repositories.users import get_user_by_id
 from app.schemas.auth import (
@@ -36,12 +37,34 @@ from app.services.email_delivery import EmailDeliveryError
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _normalize_rate_limit_email(email: str) -> str:
+    return email.strip().lower()
+
+
 @router.post(
     "/register",
     response_model=RegisterResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def register(payload: UserCreate, session: SessionDep) -> RegisterResponse:
+def register(
+    payload: UserCreate,
+    session: SessionDep,
+    request: Request,
+) -> RegisterResponse:
+    settings = get_settings()
+    client_ip = get_client_ip(request)
+    email_hash = hash_rate_limit_value(_normalize_rate_limit_email(str(payload.email)))
+    check_rate_limit(
+        f"rl:auth:register:ip:{client_ip}",
+        settings.rate_limit_register_ip_limit,
+        settings.rate_limit_register_ip_window_seconds,
+    )
+    check_rate_limit(
+        f"rl:auth:register:email:{email_hash}",
+        settings.rate_limit_register_email_limit,
+        settings.rate_limit_register_email_window_seconds,
+    )
+
     try:
         user = register_user(session, payload)
     except UserAlreadyExistsError:
@@ -67,7 +90,15 @@ def register(payload: UserCreate, session: SessionDep) -> RegisterResponse:
 def verify_email(
     payload: VerifyEmailRequest,
     session: SessionDep,
+    request: Request,
 ) -> VerifyEmailResponse:
+    settings = get_settings()
+    check_rate_limit(
+        f"rl:auth:verify:ip:{get_client_ip(request)}",
+        settings.rate_limit_verify_email_ip_limit,
+        settings.rate_limit_verify_email_ip_window_seconds,
+    )
+
     try:
         token_record = validate_action_token(
             session,
@@ -100,7 +131,21 @@ def verify_email(
 def resend_verification(
     current_user: CurrentUserDep,
     session: SessionDep,
+    request: Request,
 ) -> ResendVerificationResponse:
+    settings = get_settings()
+    client_ip = get_client_ip(request)
+    check_rate_limit(
+        f"rl:auth:resend:ip:{client_ip}",
+        settings.rate_limit_resend_verification_ip_limit,
+        settings.rate_limit_resend_verification_ip_window_seconds,
+    )
+    check_rate_limit(
+        f"rl:auth:resend:user:{current_user.id}",
+        settings.rate_limit_resend_verification_user_limit,
+        settings.rate_limit_resend_verification_user_window_seconds,
+    )
+
     if current_user.email_verified_at is not None:
         return ResendVerificationResponse(
             verification_required=False,
@@ -128,6 +173,20 @@ def login(
     request: Request,
     response: Response,
 ) -> LoginResponse:
+    settings = get_settings()
+    client_ip = get_client_ip(request)
+    email_hash = hash_rate_limit_value(_normalize_rate_limit_email(str(payload.email)))
+    check_rate_limit(
+        f"rl:auth:login:ip:{client_ip}",
+        settings.rate_limit_login_ip_limit,
+        settings.rate_limit_login_ip_window_seconds,
+    )
+    check_rate_limit(
+        f"rl:auth:login:email:{email_hash}",
+        settings.rate_limit_login_email_limit,
+        settings.rate_limit_login_email_window_seconds,
+    )
+
     user = authenticate_user(
         session,
         str(payload.email),
