@@ -20,6 +20,8 @@ class UserRead(BaseModel):
     full_name: str | None = None
     role: str
     status: str
+    email_verified_at: datetime | None = None
+    email_verification_sent_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None

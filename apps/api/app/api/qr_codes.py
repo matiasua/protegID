@@ -4,7 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
 
-from app.api.dependencies import CurrentUserDep, SessionDep
+from app.api.dependencies import CurrentUserDep, SessionDep, require_verified_email
+from app.models import User
 from app.repositories.devices import get_device_by_id
 from app.schemas.qr_code import DeviceQrMetadata, DeviceQrStatus
 from app.services.qr_storage import (
@@ -18,12 +19,13 @@ from app.services.qr_storage import (
 router = APIRouter(tags=["qr-codes"])
 
 
-def _require_admin(current_user: CurrentUserDep) -> None:
+def _require_admin(current_user: User) -> None:
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required",
         )
+    require_verified_email(current_user)
 
 
 @router.post("/api/admin/devices/{device_id}/qr", response_model=DeviceQrMetadata)

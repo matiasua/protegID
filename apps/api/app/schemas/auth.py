@@ -12,3 +12,21 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     user: UserRead
+
+
+class RegisterResponse(BaseModel):
+    user: UserRead
+    verification_required: bool
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+
+
+class VerifyEmailResponse(BaseModel):
+    email_verified: bool
+
+
+class ResendVerificationResponse(BaseModel):
+    verification_required: bool
+    verification_sent: bool

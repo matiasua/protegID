@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import CurrentUserDep, SessionDep
+from app.api.dependencies import CurrentUserDep, SessionDep, VerifiedEmailDep
 from app.models import Device, User
 from app.repositories.devices import get_device_by_id
 from app.repositories.emergency_profiles import get_profile_by_device_id
@@ -79,7 +79,7 @@ def put_device_emergency_profile(
     device_id: UUID,
     payload: EmergencyProfileUpdate,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: VerifiedEmailDep,
 ):
     device = _get_owned_device(session, current_user, device_id)
     try:

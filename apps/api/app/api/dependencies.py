@@ -36,3 +36,20 @@ def get_current_user(request: Request, session: SessionDep) -> User:
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+
+
+def require_verified_email(current_user: User) -> User:
+    if current_user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required.",
+        )
+
+    return current_user
+
+
+def get_verified_email_user(current_user: CurrentUserDep) -> User:
+    return require_verified_email(current_user)
+
+
+VerifiedEmailDep = Annotated[User, Depends(get_verified_email_user)]

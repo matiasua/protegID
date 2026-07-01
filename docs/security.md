@@ -1,5 +1,31 @@
 # Seguridad
 
+## Estado Actual Sprint 19: Verificacion de Email y Proteccion de Abuso
+
+ProtegID incluye verificacion de email con tokens one-time-use y rate limiting Redis para el lanzamiento controlado.
+
+Registro y verificacion:
+
+- `POST /api/auth/register` crea usuarios con `email_verified_at=null`, devuelve `RegisterResponse` y no inicia sesion automaticamente.
+- El backend genera tokens de accion con proposito `email_verification`.
+- El token raw no se guarda en DB; `auth_action_tokens` guarda `token_hash`.
+- El link de verificacion apunta a `/verify-email?token=...`.
+- `POST /api/auth/verify-email` es publico y no requiere CSRF.
+- Al verificar, el token queda marcado con `used_at` y se revocan tokens pendientes cuando corresponde.
+- Login se permite aunque `email_verified_at` sea `null`.
+
+Usuarios autenticados no verificados pueden iniciar sesion, consultar `/api/auth/me`, ver dashboard basico, listar devices propios y reenviar verificacion. No pueden activar identificadores, editar/publicar perfiles, crear devices admin ni operar endpoints admin de QR.
+
+Rate limiting:
+
+- Redis es dependencia critica para rate limiting; si Redis falla, endpoints criticos responden `503 Rate limit service unavailable.`.
+- Endpoints cubiertos: `POST /api/auth/login`, `POST /api/auth/register`, `POST /api/auth/resend-verification`, `POST /api/auth/verify-email`, `POST /api/devices/activate`, `GET /api/public/devices/{public_id}/activation-status` y `GET /api/public/profiles/{public_id}`.
+- Las keys no guardan email plano; el email se normaliza y se hashea con SHA-256.
+- Redis no guarda tokens raw ni `claim_code`.
+- La respuesta `429` es generica.
+
+Ver detalle operativo en `docs/auth-email-verification.md`.
+
 ## Estado Actual Sprint 18: Sesiones Productivas
 
 ProtegID usa sesiones server-side con cookie HttpOnly para el producto web.
@@ -17,7 +43,9 @@ CSRF usa double-submit:
 - Cookie `protegid_csrf`: no HttpOnly, `SameSite=Lax`, `Path=/`, `Secure=true` en produccion, sin `Domain`.
 - Header requerido: `X-CSRF-Token`.
 - Aplica a `POST`, `PUT`, `PATCH` y `DELETE` si existe cookie de sesion.
-- No aplica a `GET`, `HEAD`, `OPTIONS` ni a `POST /api/auth/login`.
+- No aplica a `GET`, `HEAD`, `OPTIONS`, `POST /api/auth/login` ni `POST /api/auth/verify-email`.
+- `POST /api/auth/verify-email` queda excluido porque usa token one-time-use opaco, hasheado en DB, con expiracion, `used_at`, `revoked_at` y proposito `email_verification`.
+- `POST /api/auth/resend-verification` y `POST /api/auth/logout` siguen requiriendo CSRF cuando hay sesion.
 - Requests privados sin sesion deben responder `401`; requests con sesion y CSRF faltante/incorrecto responden `403 CSRF validation failed`.
 
 Variables de entorno actuales:
@@ -32,6 +60,10 @@ Variables de entorno actuales:
 - `CSRF_COOKIE_NAME` (`protegid_csrf`).
 - `CSRF_HEADER_NAME` (`X-CSRF-Token`).
 - `CSRF_TOKEN_BYTES` (`32`).
+- `EMAIL_VERIFICATION_TOKEN_TTL_SECONDS` (`86400`).
+- `ACTION_TOKEN_BYTES` (`32`).
+- `EMAIL_DELIVERY_MODE` (`smtp` local con Mailpit, `console` permitido solo local/dev/test).
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`.
 
 Validaciones realizadas:
 
@@ -43,7 +75,7 @@ Validaciones realizadas:
 - Request privado sin sesion retorna `401`.
 - Bearer antiguo sin cookie retorna `401`.
 
-Pendientes de hardening posteriores: rate limiting de login, email verification, recuperacion de password, auditoria formal de eventos de sesion, gestion de sesiones activas por usuario, rotacion/renovacion controlada de sesion, headers HTTP en Nginx, CSP y revision CORS productiva.
+Pendientes de hardening posteriores: recuperacion de password, auditoria formal de eventos de sesion, gestion de sesiones activas por usuario, rotacion/renovacion controlada de sesion, headers HTTP en Nginx, CSP y revision CORS productiva.
 
 ## Reglas iniciales
 
@@ -56,6 +88,8 @@ Pendientes de hardening posteriores: rate limiting de login, email verification,
 - Mantener configuracion sensible mediante variables de entorno.
 - No incluir `claim_code` en QR/NFC, URLs, logs ni respuestas API.
 - No guardar `claim_code` en texto plano; guardar solo `claim_code_hash`.
+- No exponer token raw de verificacion ni guardarlo en DB.
+- No incluir emails planos en Redis keys.
 - No publicar perfiles incompletos ni sin consentimiento vigente.
 - No inferir consentimiento desde `is_public`.
 - No exponer campos internos de readiness, consentimiento ni ids internos en respuestas publicas.
@@ -83,6 +117,22 @@ Variable de consentimiento publico:
 
 Si la version aceptada por el perfil no coincide con esta variable, el perfil no queda operativo publicamente.
 
+Variables de verificacion de email:
+
+- `EMAIL_VERIFICATION_TOKEN_TTL_SECONDS`: TTL del token one-time-use de verificacion.
+- `ACTION_TOKEN_BYTES`: entropia usada para generar tokens de accion.
+- `EMAIL_DELIVERY_MODE`: `smtp` para Mailpit/local SMTP o `console` solo en entornos local/dev/test.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`: transporte SMTP.
+
+Variables de rate limiting:
+
+- `RATE_LIMIT_LOGIN_IP_LIMIT`, `RATE_LIMIT_LOGIN_IP_WINDOW_SECONDS`, `RATE_LIMIT_LOGIN_EMAIL_LIMIT`, `RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS`.
+- `RATE_LIMIT_REGISTER_IP_LIMIT`, `RATE_LIMIT_REGISTER_IP_WINDOW_SECONDS`, `RATE_LIMIT_REGISTER_EMAIL_LIMIT`, `RATE_LIMIT_REGISTER_EMAIL_WINDOW_SECONDS`.
+- `RATE_LIMIT_RESEND_VERIFICATION_IP_LIMIT`, `RATE_LIMIT_RESEND_VERIFICATION_IP_WINDOW_SECONDS`, `RATE_LIMIT_RESEND_VERIFICATION_USER_LIMIT`, `RATE_LIMIT_RESEND_VERIFICATION_USER_WINDOW_SECONDS`.
+- `RATE_LIMIT_VERIFY_EMAIL_IP_LIMIT`, `RATE_LIMIT_VERIFY_EMAIL_IP_WINDOW_SECONDS`.
+- `RATE_LIMIT_DEVICE_ACTIVATE_IP_LIMIT`, `RATE_LIMIT_DEVICE_ACTIVATE_IP_WINDOW_SECONDS`, `RATE_LIMIT_DEVICE_ACTIVATE_PUBLIC_ID_LIMIT`, `RATE_LIMIT_DEVICE_ACTIVATE_PUBLIC_ID_WINDOW_SECONDS`.
+- `RATE_LIMIT_PUBLIC_LOOKUP_IP_LIMIT`, `RATE_LIMIT_PUBLIC_LOOKUP_IP_WINDOW_SECONDS`, `RATE_LIMIT_PUBLIC_LOOKUP_PUBLIC_ID_LIMIT`, `RATE_LIMIT_PUBLIC_LOOKUP_PUBLIC_ID_WINDOW_SECONDS`.
+
 ## Autenticacion
 
 Auth actual combina Auth Foundation con sesiones server-side de Sprint 18:
@@ -92,6 +142,8 @@ Auth actual combina Auth Foundation con sesiones server-side de Sprint 18:
 - Cookie HttpOnly de sesion y cookie CSRF double-submit.
 - `POST /api/auth/register` crea usuarios.
 - `POST /api/auth/login` setea cookies y devuelve `user`; no devuelve tokens.
+- `POST /api/auth/verify-email` verifica email con token one-time-use publico sin CSRF.
+- `POST /api/auth/resend-verification` reenvia email y requiere sesion + CSRF.
 - `GET /api/auth/me` requiere cookie de sesion y devuelve el usuario actual.
 
 `password_hash` nunca debe exponerse en respuestas. Passwords y tokens no deben loguearse.
@@ -396,7 +448,7 @@ Campos gestionados: `display_name`, `blood_type`, `allergies`, `allergies_none`,
 
 ## Estado actual
 
-El estado actual no implementa validacion estricta de telefono internacional, wizard profesional multi-vista para perfil, email verification, recuperacion de password, refresh token, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa de la sesion, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni provisionamiento masivo con export de `claim_code`. El registro no inicia sesion automaticamente y roles siguen siendo strings. Email verification queda propuesto para un sprint posterior.
+El estado actual no implementa validacion estricta de telefono internacional, wizard profesional multi-vista para perfil, recuperacion de password, refresh token, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, expiracion visual previa de la sesion, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, subida de archivos medicos, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR, presigned URL publica ni provisionamiento masivo con export de `claim_code`. El registro no inicia sesion automaticamente y roles siguen siendo strings.
 
 Sprint 13 agrega campos de claim a `devices`, servicio `claim_codes` y endpoint publico minimo de estado. Sprint 14 actualiza `POST /api/devices/activate` para requerir `public_id + claim_code` y bloqueo temporal por intentos fallidos. Sprint 15 agrega onboarding publico y actualiza dashboard para enviar `claim_code`. Sprint 16 agrega registro de usuario final, `returnTo` seguro y UX post-vinculacion hacia completar perfil. Sprint 17 agrega readiness productivo, consentimiento explicito, bloqueo de publicacion incompleta, endpoint privado de readiness, endpoint publico endurecido y progreso en dashboard. Sprint 18 migra auth a sesiones server-side con cookie HttpOnly y CSRF double-submit.
 

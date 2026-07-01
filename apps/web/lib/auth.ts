@@ -1,6 +1,14 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
 import { csrfHeaders } from "@/lib/csrf";
-import type { AuthUser, LoginRequest, RegisterRequest, RegisterResponse } from "@/types/auth";
+import type {
+  AuthUser,
+  LoginRequest,
+  RegisterRequest,
+  RegisterResponse,
+  ResendVerificationResponse,
+  VerifyEmailRequest,
+  VerifyEmailResponse,
+} from "@/types/auth";
 
 export async function login(email: string, password: string): Promise<void> {
   const url = buildApiUrl("/api/auth/login");
@@ -30,7 +38,7 @@ export async function login(email: string, password: string): Promise<void> {
   }
 }
 
-export async function register(payload: RegisterRequest): Promise<AuthUser> {
+export async function register(payload: RegisterRequest): Promise<RegisterResponse> {
   const url = buildApiUrl("/api/auth/register");
 
   let response: Response;
@@ -55,11 +63,83 @@ export async function register(payload: RegisterRequest): Promise<AuthUser> {
     throw new ApiRequestError("Ya existe una cuenta con este correo.", response.status);
   }
 
+  if (response.status === 429) {
+    throw new ApiRequestError("Demasiados intentos. Intenta nuevamente más tarde.", response.status);
+  }
+
   if (!response.ok) {
     throw new ApiRequestError("No se pudo crear la cuenta.", response.status);
   }
 
   return (await response.json()) as RegisterResponse;
+}
+
+export async function verifyEmail(token: string): Promise<VerifyEmailResponse> {
+  const url = buildApiUrl("/api/auth/verify-email");
+  const payload: VerifyEmailRequest = { token };
+
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    throw new Error("No se pudo verificar el correo.", { cause: error });
+  }
+
+  if (response.status === 400 || response.status === 422) {
+    throw new ApiRequestError("El enlace de verificación no es válido o expiró.", response.status);
+  }
+
+  if (response.status === 429) {
+    throw new ApiRequestError("Demasiados intentos. Intenta más tarde.", response.status);
+  }
+
+  if (!response.ok) {
+    throw new ApiRequestError("No se pudo verificar el correo.", response.status);
+  }
+
+  return (await response.json()) as VerifyEmailResponse;
+}
+
+export async function resendVerification(): Promise<ResendVerificationResponse> {
+  const url = buildApiUrl("/api/auth/resend-verification");
+
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: csrfHeaders(),
+    });
+  } catch (error) {
+    throw new Error("No se pudo reenviar el correo de verificación.", { cause: error });
+  }
+
+  if (response.status === 401) {
+    throw new ApiRequestError("Sesión expirada o no autenticada.", response.status);
+  }
+
+  if (response.status === 403) {
+    throw new ApiRequestError("No se pudo validar la seguridad de la solicitud.", response.status);
+  }
+
+  if (response.status === 429) {
+    throw new ApiRequestError("Demasiados intentos. Intenta nuevamente más tarde.", response.status);
+  }
+
+  if (!response.ok) {
+    throw new ApiRequestError("No se pudo reenviar el correo de verificación.", response.status);
+  }
+
+  return (await response.json()) as ResendVerificationResponse;
 }
 
 export async function getCurrentUser(): Promise<AuthUser> {

@@ -6,7 +6,7 @@ import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
-import { getCurrentUser, logout } from "@/lib/auth";
+import { getCurrentUser, logout, resendVerification } from "@/lib/auth";
 import { activateDeviceWithClaimCode, getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, getEmergencyProfileReadiness, upsertEmergencyProfile } from "@/lib/emergency-profiles";
 import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
@@ -72,6 +72,10 @@ type ProfileFieldGroup = {
   title: string;
   fields: ProfileFieldConfig[];
 };
+
+type ResendVerificationStatus = "idle" | "sending" | "sent" | "error";
+
+const EMAIL_VERIFICATION_REQUIRED_MESSAGE = "Debes verificar tu correo antes de realizar esta acción.";
 
 const PROFILE_FIELD_GROUPS: ProfileFieldGroup[] = [
   {
@@ -150,6 +154,10 @@ function getActivationErrorMessage(error: unknown): string {
       return "Sesión expirada o no autenticada.";
     }
 
+    if (error.status === 403) {
+      return EMAIL_VERIFICATION_REQUIRED_MESSAGE;
+    }
+
     if (error.status === 404) {
       return "Identificador no disponible.";
     }
@@ -167,8 +175,12 @@ function getActivationErrorMessage(error: unknown): string {
 }
 
 function getProfileErrorMessage(error: unknown, fallbackMessage: string): string {
-  if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
+  if (error instanceof ApiRequestError && error.status === 401) {
     return "No autorizado para gestionar este perfil de emergencia.";
+  }
+
+  if (error instanceof ApiRequestError && error.status === 403) {
+    return EMAIL_VERIFICATION_REQUIRED_MESSAGE;
   }
 
   if (error instanceof ApiRequestError && error.status === 422) {
@@ -255,7 +267,7 @@ function getQrGenerationErrorMessage(error: unknown): string {
     }
 
     if (error.status === 403) {
-      return "La gestión de QR requiere rol admin.";
+      return EMAIL_VERIFICATION_REQUIRED_MESSAGE;
     }
 
     if (error.status === 404) {
@@ -273,7 +285,7 @@ function getQrDownloadErrorMessage(error: unknown): string {
     }
 
     if (error.status === 403) {
-      return "La gestión de QR requiere rol admin.";
+      return EMAIL_VERIFICATION_REQUIRED_MESSAGE;
     }
 
     if (error.status === 404) {
@@ -286,6 +298,18 @@ function getQrDownloadErrorMessage(error: unknown): string {
 
 function isAdminUser(user: AuthUser | null): boolean {
   return user?.role.toLowerCase() === "admin";
+}
+
+function isEmailVerified(user: AuthUser | null): boolean {
+  return user?.email_verified_at !== null && user?.email_verified_at !== undefined;
+}
+
+function getResendVerificationErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    return error.message;
+  }
+
+  return "No se pudo reenviar el correo de verificación.";
 }
 
 function createInitialQrStatusState(devices: Device[]): Record<string, DeviceQrStatusState> {
@@ -513,6 +537,8 @@ function DashboardContent() {
   const [qrAdminMessage, setQrAdminMessage] = useState<string | null>(null);
   const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(null);
   const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
+  const [resendVerificationStatus, setResendVerificationStatus] = useState<ResendVerificationStatus>("idle");
+  const [resendVerificationMessage, setResendVerificationMessage] = useState<string | null>(null);
   const [hasCheckedSession, setHasCheckedSession] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
@@ -521,8 +547,9 @@ function DashboardContent() {
   const [isLoadingProfileReadiness, setIsLoadingProfileReadiness] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const currentUserIsAdmin = isAdminUser(currentUser);
+  const currentUserEmailVerified = isEmailVerified(currentUser);
   const qrPermissionMessage = currentUserIsAdmin ? qrAdminMessage : null;
-  const canManageQr = currentUserIsAdmin && qrPermissionMessage === null;
+  const canManageQr = currentUserIsAdmin && currentUserEmailVerified && qrPermissionMessage === null;
 
   useEffect(() => {
     void loadAuthenticatedDashboard().finally(() => setHasCheckedSession(true));
@@ -567,6 +594,8 @@ function DashboardContent() {
     setDevices([]);
     setQrStatusByDeviceId({});
     setQrAdminMessage(null);
+    setResendVerificationStatus("idle");
+    setResendVerificationMessage(null);
     resetActivationForm();
     resetProfileEditor();
   }
@@ -635,7 +664,7 @@ function DashboardContent() {
       setDevices(userDevices);
 
       if (isAdminUser(validatedUser)) {
-        void loadDeviceQrStatuses(userDevices);
+        void loadDeviceQrStatuses(userDevices, isEmailVerified(validatedUser));
       } else {
         setQrStatusByDeviceId({});
       }
@@ -646,7 +675,7 @@ function DashboardContent() {
     }
   }
 
-  async function loadDeviceQrStatuses(userDevices: Device[]) {
+  async function loadDeviceQrStatuses(userDevices: Device[], emailVerified = currentUserEmailVerified) {
     if (userDevices.length === 0) {
       setQrStatusByDeviceId({});
       return;
@@ -671,7 +700,7 @@ function DashboardContent() {
           }));
         } catch (error) {
           if (error instanceof ApiRequestError && error.status === 403) {
-            setQrAdminMessage("La gestión de QR requiere rol admin.");
+            setQrAdminMessage(emailVerified ? "La gestión de QR requiere rol admin." : EMAIL_VERIFICATION_REQUIRED_MESSAGE);
           }
 
           setQrStatusByDeviceId((currentStatuses) => ({
@@ -727,6 +756,24 @@ function DashboardContent() {
       return;
     }
 
+    if (!isEmailVerified(currentUser)) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: false,
+          isDownloading: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: EMAIL_VERIFICATION_REQUIRED_MESSAGE,
+          },
+        },
+      }));
+      return;
+    }
+
     setQrStatusByDeviceId((currentStatuses) => ({
       ...currentStatuses,
       [device.id]: {
@@ -762,7 +809,7 @@ function DashboardContent() {
       const message = getQrGenerationErrorMessage(error);
 
       if (error instanceof ApiRequestError && error.status === 403) {
-        setQrAdminMessage("La gestión de QR requiere rol admin.");
+        setQrAdminMessage(currentUserEmailVerified ? "La gestión de QR requiere rol admin." : EMAIL_VERIFICATION_REQUIRED_MESSAGE);
       }
 
       setQrStatusByDeviceId((currentStatuses) => ({
@@ -813,6 +860,24 @@ function DashboardContent() {
           actionMessage: {
             kind: "error",
             text: "La gestión de QR requiere rol admin.",
+          },
+        },
+      }));
+      return;
+    }
+
+    if (!isEmailVerified(currentUser)) {
+      setQrStatusByDeviceId((currentStatuses) => ({
+        ...currentStatuses,
+        [device.id]: {
+          isLoading: currentStatuses[device.id]?.isLoading ?? false,
+          isGenerating: currentStatuses[device.id]?.isGenerating ?? false,
+          isDownloading: false,
+          status: currentStatuses[device.id]?.status ?? null,
+          hasError: currentStatuses[device.id]?.hasError ?? false,
+          actionMessage: {
+            kind: "error",
+            text: EMAIL_VERIFICATION_REQUIRED_MESSAGE,
           },
         },
       }));
@@ -923,6 +988,11 @@ function DashboardContent() {
       return;
     }
 
+    if (!isEmailVerified(currentUser)) {
+      setActivationErrorMessage(EMAIL_VERIFICATION_REQUIRED_MESSAGE);
+      return;
+    }
+
     if (!publicId) {
       setActivationErrorMessage("Ingresa un public_id antes de activar.");
       return;
@@ -945,7 +1015,7 @@ function DashboardContent() {
         setDevices(userDevices);
 
         if (isAdminUser(currentUser)) {
-          void loadDeviceQrStatuses(userDevices);
+          void loadDeviceQrStatuses(userDevices, isEmailVerified(currentUser));
         } else {
           setQrStatusByDeviceId({});
         }
@@ -1020,6 +1090,11 @@ function DashboardContent() {
       return;
     }
 
+    if (!isEmailVerified(currentUser)) {
+      setProfileErrorMessage(EMAIL_VERIFICATION_REQUIRED_MESSAGE);
+      return;
+    }
+
     setProfileErrorMessage(null);
     setProfileSuccessMessage(null);
     setIsSavingProfile(true);
@@ -1039,6 +1114,24 @@ function DashboardContent() {
       setProfileErrorMessage(getProfileErrorMessage(error, "No se pudo guardar el perfil de emergencia."));
     } finally {
       setIsSavingProfile(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    setResendVerificationStatus("sending");
+    setResendVerificationMessage(null);
+
+    try {
+      const response = await resendVerification();
+      setResendVerificationStatus("sent");
+      setResendVerificationMessage(
+        response.verification_sent
+          ? "Correo de verificación reenviado. Revisa tu bandeja de entrada."
+          : "Tu correo ya figura como verificado.",
+      );
+    } catch (error) {
+      setResendVerificationStatus("error");
+      setResendVerificationMessage(getResendVerificationErrorMessage(error));
     }
   }
 
@@ -1122,7 +1215,40 @@ function DashboardContent() {
                 <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</dt>
                 <dd className="mt-2 text-sm font-semibold text-slate-950">{currentUser.status}</dd>
               </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Verificación email</dt>
+                <dd className="mt-2 text-sm font-semibold text-slate-950">
+                  {currentUserEmailVerified ? "Verificado" : "Pendiente"}
+                </dd>
+              </div>
             </dl>
+          ) : null}
+
+          {currentUser && !currentUserEmailVerified ? (
+            <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" aria-labelledby="email-verification-title">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="font-semibold" id="email-verification-title">Tu correo aún no está verificado.</h3>
+                  <p className="mt-2 leading-6">
+                    Verifica tu correo para activar identificadores, editar perfiles de emergencia y publicar tu ProtegID.
+                  </p>
+                </div>
+                <Button
+                  className="w-full sm:w-auto"
+                  disabled={resendVerificationStatus === "sending"}
+                  onClick={() => void handleResendVerification()}
+                  type="button"
+                  variant="outline"
+                >
+                  {resendVerificationStatus === "sending" ? "Enviando..." : "Reenviar correo de verificación"}
+                </Button>
+              </div>
+              {resendVerificationMessage ? (
+                <p className={`mt-4 rounded-xl border px-3 py-2 font-medium ${resendVerificationStatus === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-white text-emerald-800"}`}>
+                  {resendVerificationMessage}
+                </p>
+              ) : null}
+            </section>
           ) : null}
 
           {hasCheckedSession && !isValidating && !currentUser ? (
@@ -1167,6 +1293,12 @@ function DashboardContent() {
                 </p>
               </div>
 
+              {!currentUserEmailVerified ? (
+                <p className="mt-4 rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm font-medium text-amber-900">
+                  Debes verificar tu correo antes de activar este identificador.
+                </p>
+              ) : null}
+
               <form className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end" onSubmit={handleActivateIdentifier}>
                 <div className="flex-1">
                   <label className="text-sm font-medium text-slate-700" htmlFor="activation-public-id">
@@ -1175,7 +1307,7 @@ function DashboardContent() {
                   <input
                     autoComplete="off"
                     className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm uppercase text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                    disabled={isActivatingDevice}
+                    disabled={isActivatingDevice || !currentUserEmailVerified}
                     id="activation-public-id"
                     onChange={(event) => setActivationPublicId(event.target.value)}
                     placeholder="PID-XXXXXXXXXX"
@@ -1190,7 +1322,7 @@ function DashboardContent() {
                   <input
                     autoComplete="off"
                     className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm uppercase text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                    disabled={isActivatingDevice}
+                    disabled={isActivatingDevice || !currentUserEmailVerified}
                     id="activation-claim-code"
                     onChange={(event) => setActivationClaimCode(event.target.value)}
                     placeholder="XXXX-XXXX-XXXX"
@@ -1202,6 +1334,7 @@ function DashboardContent() {
                   className="w-full md:w-auto"
                   disabled={
                     isActivatingDevice ||
+                    !currentUserEmailVerified ||
                     activationPublicId.trim().length === 0 ||
                     activationClaimCode.trim().length === 0
                   }
@@ -1367,6 +1500,12 @@ function DashboardContent() {
                           <p className="mt-1">La visualización depende de que el perfil esté marcado como público.</p>
                         </div>
 
+                        {!currentUserEmailVerified ? (
+                          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+                            Debes verificar tu correo antes de realizar esta acción.
+                          </p>
+                        ) : null}
+
                         {qrStatusState?.status?.object_key ? (
                           <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                             <summary className="cursor-pointer font-medium text-slate-700">Detalle técnico</summary>
@@ -1412,7 +1551,7 @@ function DashboardContent() {
                     <div className="mt-5">
                       <Button
                         className="w-full sm:w-auto"
-                        disabled={!canOperateDevice || isLoadingProfile || isSavingProfile}
+                        disabled={!canOperateDevice || !currentUserEmailVerified || isLoadingProfile || isSavingProfile}
                         onClick={() => void handleEditProfile(device)}
                         type="button"
                         variant={isSelectedDevice ? "default" : "outline"}
@@ -1542,6 +1681,12 @@ function DashboardContent() {
               )}
             </section>
 
+            {!currentUserEmailVerified ? (
+              <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
+                Debes verificar tu correo antes de realizar esta acción.
+              </p>
+            ) : null}
+
             <form className="mt-6 space-y-5" onSubmit={handleSaveProfile}>
               {PROFILE_FIELD_GROUPS.map((group) => (
                 <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5" key={group.title}>
@@ -1555,7 +1700,7 @@ function DashboardContent() {
                         {field.multiline ? (
                           <textarea
                             className="mt-2 min-h-28 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            disabled={isLoadingProfile || isSavingProfile || (field.noneField ? profileForm[field.noneField] : false)}
+                            disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified || (field.noneField ? profileForm[field.noneField] : false)}
                             id={`profile-${field.name}`}
                             onChange={(event) => updateProfileTextField(field.name, event.target.value)}
                             value={profileForm[field.name]}
@@ -1563,7 +1708,7 @@ function DashboardContent() {
                         ) : (
                           <input
                             className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            disabled={isLoadingProfile || isSavingProfile || (field.noneField ? profileForm[field.noneField] : false)}
+                            disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified || (field.noneField ? profileForm[field.noneField] : false)}
                             id={`profile-${field.name}`}
                             onChange={(event) => updateProfileTextField(field.name, event.target.value)}
                             type="text"
@@ -1575,7 +1720,7 @@ function DashboardContent() {
                             <input
                               checked={profileForm[field.noneField]}
                               className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
-                              disabled={isLoadingProfile || isSavingProfile}
+                              disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified}
                               onChange={(event) => updateProfileDecisionField(field.noneField as ProfileDecisionFieldName, event.target.checked)}
                               type="checkbox"
                             />
@@ -1594,7 +1739,7 @@ function DashboardContent() {
                   <input
                     checked={profileConsentAccepted}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
-                    disabled={isLoadingProfile || isSavingProfile || !profileReadiness}
+                    disabled={isLoadingProfile || isSavingProfile || !profileReadiness || !currentUserEmailVerified}
                     onChange={(event) => updateConsentAccepted(event.target.checked)}
                     type="checkbox"
                   />
@@ -1613,7 +1758,7 @@ function DashboardContent() {
                   <input
                     checked={profileForm.is_public}
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
-                    disabled={isLoadingProfile || isSavingProfile}
+                    disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified}
                     onChange={(event) =>
                       setProfileForm((currentForm) => ({
                         ...currentForm,
@@ -1636,7 +1781,7 @@ function DashboardContent() {
                 </label>
               </section>
 
-              <Button className="w-full sm:w-auto" disabled={isLoadingProfile || isSavingProfile} type="submit">
+              <Button className="w-full sm:w-auto" disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified} type="submit">
                 {isSavingProfile ? "Guardando..." : "Guardar perfil"}
               </Button>
             </form>

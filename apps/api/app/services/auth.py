@@ -1,12 +1,27 @@
 """Servicio de autenticación y registro."""
 
+from datetime import UTC, datetime
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
 from app.models import User
-from app.repositories.users import create_user, get_user_by_email
+from app.repositories.users import (
+    create_user,
+    get_user_by_email,
+    mark_user_email_verified,
+    update_user_email_verification_sent_at,
+)
 from app.schemas.user import UserCreate
+from app.services.auth_action_tokens import (
+    PURPOSE_EMAIL_VERIFICATION,
+    create_action_token,
+)
+from app.services.email_delivery import (
+    build_email_verification_url,
+    send_email_verification_email,
+)
 
 
 class UserAlreadyExistsError(ValueError):
@@ -35,6 +50,21 @@ def register_user(session: Session, user_create: UserCreate) -> User:
     except IntegrityError:
         session.rollback()
         raise UserAlreadyExistsError("User email already exists") from None
+
+
+def send_user_email_verification(session: Session, user: User) -> None:
+    _, token = create_action_token(
+        session,
+        user,
+        PURPOSE_EMAIL_VERIFICATION,
+        user.email,
+    )
+    send_email_verification_email(user.email, build_email_verification_url(token))
+    update_user_email_verification_sent_at(session, user)
+
+
+def verify_user_email(session: Session, user: User) -> None:
+    mark_user_email_verified(session, user, datetime.now(UTC))
 
 
 def authenticate_user(session: Session, email: str, password: str) -> User | None:

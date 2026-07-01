@@ -9,9 +9,12 @@
 - No hardcodear secretos.
 - No loguear datos medicos o sensibles.
 - No loguear passwords ni tokens.
+- No loguear tokens raw de verificacion.
 - No loguear `claim_code` ni `claim_code_hash`.
 - No incluir `claim_code` en QR/NFC, URLs ni respuestas API.
 - No guardar `claim_code` en texto plano.
+- No guardar tokens raw de verificacion en DB ni storage.
+- No incluir emails planos en Redis keys.
 - No publicar perfiles incompletos ni sin consentimiento vigente.
 - No inferir consentimiento desde `is_public`.
 - No exponer campos internos de readiness, consentimiento ni ids internos en endpoints publicos.
@@ -34,7 +37,11 @@
 
 Auth productivo ya existe e incluye modelo `User`, tabla `users`, hashing de passwords, tabla `auth_sessions`, sesion server-side revocable y cookies seguras. `POST /api/auth/login` crea `auth_session`, setea `protegid_session` HttpOnly y `protegid_csrf`, y devuelve `user`; no devuelve `access_token`, `token_type`, token opaco ni `session_token_hash`. `CurrentUserDep` autentica solo por cookie de sesion. `POST /api/auth/logout` requiere CSRF, revoca la sesion y borra cookies. El token raw de sesion nunca debe guardarse en DB; solo `session_token_hash`. `password_hash`, tokens de sesion y CSRF tokens no deben exponerse ni loguearse.
 
-CSRF usa double-submit: cookie `protegid_csrf` legible por JS + header `X-CSRF-Token`. Aplica a `POST`, `PUT`, `PATCH` y `DELETE` cuando hay cookie de sesion. Login no requiere CSRF. Requests privados sin sesion deben responder `401`; requests con sesion y CSRF faltante/incorrecto deben responder `403`.
+CSRF usa double-submit: cookie `protegid_csrf` legible por JS + header `X-CSRF-Token`. Aplica a `POST`, `PUT`, `PATCH` y `DELETE` cuando hay cookie de sesion. Login y `POST /api/auth/verify-email` no requieren CSRF. `POST /api/auth/resend-verification`, logout y mutaciones privadas siguen requiriendo CSRF. Requests privados sin sesion deben responder `401`; requests con sesion y CSRF faltante/incorrecto deben responder `403`.
+
+Email Verification ya existe. `POST /api/auth/register` crea usuario no verificado, no inicia sesion y envia correo. El token raw de verificacion no se guarda; DB guarda `token_hash` en `auth_action_tokens`. `POST /api/auth/verify-email` es publico y usa token one-time-use con expiracion, `used_at`, `revoked_at` y proposito `email_verification`. Login se permite sin email verificado, pero acciones criticas requieren verificacion backend.
+
+Rate limiting ya existe con Redis. Endpoints criticos deben fallar cerrado con `503` si Redis no esta disponible. No guardar tokens, `claim_code` ni emails planos en Redis; email se hashea con SHA-256 para keys.
 
 Device Foundation ya existe e incluye modelo `Device`, tabla `devices`, relacion nullable `devices.user_id -> users.id`, generacion de `public_id` con formato `PID-XXXXXXXXXX`, campos `claim_code_hash`, `claimed_at`, `claim_attempts` y `claim_locked_until`, y endpoints protegidos basicos de devices. Los campos de claim no deben exponerse por API.
 
@@ -146,7 +153,7 @@ El endpoint publico no requiere autenticacion, busca por `Device.public_id`, sol
 
 Los endpoints QR requieren cookie de sesion y `role=admin`; `POST /qr` requiere CSRF. `GET /qr` devuelve metadata: `device_id`, `public_id`, `object_key`, `content_type` y `exists`. `POST /qr` genera/sube el QR. `GET /qr/download` lee `qr/devices/{public_id}.png` desde MinIO, no genera QR automaticamente, responde `404` si no existe y, si existe, responde PNG con `Content-Type: image/png` y `Content-Disposition: attachment; filename="{public_id}.png"`. No entrega presigned URL ni expone bucket o credenciales.
 
-No implementar validacion estricta de telefono internacional, wizard profesional multi-vista para perfil, email verification, recuperacion de password, MFA, captcha, proteccion anti-bot, roles avanzados en frontend, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, hardening de rate limiting publico, subida de archivos medicos, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR ni provisionamiento masivo con export de `claim_code` salvo solicitud explicita. Registro no inicia sesion automaticamente.
+No implementar validacion estricta de telefono internacional, wizard profesional multi-vista para perfil, recuperacion de password, MFA, captcha, proteccion anti-bot adicional, roles avanzados en frontend, auditoria formal de eventos criticos, historial/versionado completo de consentimientos, segundo contacto de emergencia, normalizacion avanzada de datos medicos, subida de archivos medicos, presigned URLs, preview de imagen QR, apertura directa de MinIO, scanner QR, lectura NFC real desde navegador, camara, NFC funcional, tracking de escaneos, geolocalizacion, notificaciones, cambio de estado desde frontend, reporte de perdido desde frontend, creacion admin de devices desde frontend, descarga publica de QR ni provisionamiento masivo con export de `claim_code` salvo solicitud explicita. Registro no inicia sesion automaticamente.
 
 No crear nuevas tablas ni migraciones salvo solicitud explicita.
 
