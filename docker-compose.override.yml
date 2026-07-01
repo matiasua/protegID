@@ -14,10 +14,24 @@ services:
 
   protegid-api:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@protegid.local}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ProtegID}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./apps/api:/app
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
 
   protegid-worker:
     command: python -m worker.main
