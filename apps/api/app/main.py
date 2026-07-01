@@ -21,6 +21,7 @@ configure_logging()
 
 settings = get_settings()
 logger = logging.getLogger("protegid-api")
+CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/verify-email"}
 
 app = FastAPI(
     title="ProtegID API",
@@ -37,7 +38,7 @@ register_exception_handlers(app)
 async def csrf_protection_middleware(request: Request, call_next):
     if (
         request.method in {"POST", "PUT", "PATCH", "DELETE"}
-        and request.url.path != "/api/auth/login"
+        and request.url.path not in CSRF_EXEMPT_PATHS
         and settings.session_cookie_name in request.cookies
         and not validate_csrf_token(request)
     ):
