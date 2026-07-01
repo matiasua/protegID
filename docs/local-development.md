@@ -31,6 +31,8 @@ Servicios principales:
 - API readiness: `http://localhost:8080/api/ready`
 - Auth register: `http://localhost:8080/api/auth/register`
 - Auth login: `http://localhost:8080/api/auth/login`
+- Auth verify email: `http://localhost:8080/api/auth/verify-email`
+- Auth resend verification: `http://localhost:8080/api/auth/resend-verification`
 - Auth me: `http://localhost:8080/api/auth/me`
 - Devices list: `http://localhost:8080/api/devices`
 - Device activate: `http://localhost:8080/api/devices/activate`
@@ -44,6 +46,7 @@ Servicios principales:
 - Web directa en desarrollo: `http://localhost:3000`
 - API directa en desarrollo: `http://localhost:8000/api/health`
 - MinIO console: `http://localhost:9001`
+- Mailpit UI: `http://localhost:8025`
 
 ## Sesiones Seguras Locales
 
@@ -52,6 +55,9 @@ El flujo local recomendado es entrar por Nginx en `http://localhost:8080` para q
 Auth actual:
 
 - `POST /api/auth/login` setea `protegid_session` HttpOnly y `protegid_csrf`, y devuelve `user`; no devuelve tokens.
+- `POST /api/auth/register` crea usuario no verificado, no inicia sesion y envia correo de verificacion.
+- `POST /api/auth/verify-email` es publico y no requiere CSRF.
+- `POST /api/auth/resend-verification` requiere sesion y CSRF.
 - `GET /api/auth/me` usa cookie de sesion.
 - `POST /api/auth/logout` requiere `X-CSRF-Token`, revoca la sesion y borra cookies.
 - Endpoints privados usan cookie de sesion; no usan `Authorization Bearer`.
@@ -71,6 +77,27 @@ Variables locales en `.env.example`:
 - `CSRF_TOKEN_BYTES=32`
 
 Produccion debe usar HTTPS, `SESSION_COOKIE_SECURE=true`, `SESSION_COOKIE_NAME=__Host-protegid_session`, `Path=/`, sin `Domain`, y web/API bajo mismo dominio u origen siempre que sea posible.
+
+## Mailpit y Verificacion de Email Local
+
+Mailpit corre dentro de Docker Compose para simular recepcion de correos de verificacion.
+
+- UI web: `http://localhost:8025`.
+- SMTP interno para `protegid-api`: `mailpit:1025`.
+- Variables locales: `EMAIL_DELIVERY_MODE=smtp`, `SMTP_HOST=mailpit`, `SMTP_PORT=1025`, `SMTP_FROM_EMAIL=no-reply@protegid.local`, `SMTP_FROM_NAME=ProtegID`, `MAILPIT_SMTP_PORT=1025`, `MAILPIT_WEB_PORT=8025`.
+
+Flujo local recomendado:
+
+```bash
+docker compose up -d
+docker compose exec -T protegid-api alembic upgrade head
+curl http://localhost:8080/api/health
+curl http://localhost:8080/api/ready
+```
+
+Luego abrir `http://localhost:8025`, registrar un usuario y usar el link `/verify-email?token=...` recibido.
+
+No usar dominios `.test` en usuarios seed porque `EmailStr` los rechaza como dominio reservado. Usar `@protegid.cl` para usuarios locales.
 
 ## Variables JWT Legadas
 
@@ -140,9 +167,9 @@ Endpoints actuales:
 
 `GET /api/auth/me` requiere cookie de sesion valida.
 
-`POST /api/auth/register` recibe `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`, devuelve `UserRead`, no devuelve token y no inicia sesion automaticamente. El rol publico se fuerza a `user`, `password_hash` no se expone, email se normaliza con `strip().lower()` en registro/login, la busqueda por email es case-insensitive y duplicados con casing distinto responden `409`. Se captura `IntegrityError` con rollback.
+`POST /api/auth/register` recibe `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`, devuelve `RegisterResponse`, no devuelve token y no inicia sesion automaticamente. El rol publico se fuerza a `user`, `password_hash` no se expone, email se normaliza con `strip().lower()` en registro/login, la busqueda por email es case-insensitive y duplicados con casing distinto responden `409`. Se captura `IntegrityError` con rollback.
 
-No hay refresh token, recuperacion de password, email verification ni MFA.
+No hay refresh token, recuperacion de password ni MFA.
 
 ## Device Foundation
 

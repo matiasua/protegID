@@ -21,6 +21,25 @@ Cookies:
 
 Operacionalmente se recomienda servir web y API bajo el mismo dominio/origin con `/api` detras de Nginx/reverse proxy. No usar CORS abierto con credentials. Si se separan dominios en el futuro, revisar `SameSite=None`, `Secure`, CORS y CSRF.
 
+## Verificacion de Email Sprint 19
+
+La verificacion de email agrega `auth_action_tokens` para tokens one-time-use y bloqueo backend de mutaciones criticas.
+
+- `POST /api/auth/register` crea usuario no verificado y no inicia sesion.
+- El token raw de verificacion no se persiste; la DB guarda `token_hash`.
+- El link enviado apunta a `/verify-email?token=...`.
+- `POST /api/auth/verify-email` es publico y no requiere CSRF.
+- `POST /api/auth/resend-verification` requiere sesion y CSRF.
+- Login se permite aunque `email_verified_at` sea `null`.
+- Usuarios no verificados pueden usar dashboard basico y listar devices propios.
+- Usuarios no verificados no pueden activar identificadores, editar/publicar perfiles ni operar endpoints admin de devices/QR.
+
+Mailpit queda disponible localmente como servicio Docker Compose para pruebas de correo: UI `http://localhost:8025`, SMTP interno `mailpit:1025`.
+
+Rate limiting usa Redis como dependencia critica. Si Redis falla, endpoints criticos responden `503` fail-closed. Las keys no guardan email plano; el email se hashea con SHA-256 y no se guardan tokens ni `claim_code` en Redis.
+
+Detalle tecnico: `docs/auth-email-verification.md`.
+
 ## Componentes
 
 - `apps/web`: interfaz web en Next.js, TypeScript, Tailwind CSS y shadcn/ui.
@@ -37,6 +56,7 @@ Nginx recibe trafico HTTP en `localhost:8080`.
 - `/api/*` se enruta hacia `protegid-api:8000`.
 
 PostgreSQL, Redis y MinIO quedan disponibles para funcionalidades actuales y futuras. Alembic esta configurado y el backend ya incluye las tablas de negocio `users`, `devices` y `emergency_profiles`.
+Mailpit queda disponible para pruebas locales de email de verificacion.
 
 ## Auth Foundation
 
@@ -46,10 +66,13 @@ El backend incluye autenticacion con usuarios y sesiones server-side:
 - Tabla `users` gestionada por Alembic.
 - Hashing de passwords con Argon2 mediante `pwdlib`.
 - Sesiones server-side revocables en `auth_sessions`.
+- Tokens de accion one-time-use en `auth_action_tokens`.
 - Cookie HttpOnly de sesion y cookie CSRF double-submit.
 - Endpoints actuales:
   - `POST /api/auth/register`
   - `POST /api/auth/login`
+  - `POST /api/auth/verify-email`
+  - `POST /api/auth/resend-verification`
   - `GET /api/auth/me`
 
 `GET /api/auth/me` requiere cookie de sesion valida. No existe refresh token, recuperacion de password ni MFA en el estado actual.
@@ -57,13 +80,14 @@ El backend incluye autenticacion con usuarios y sesiones server-side:
 Sprint 16 endurece el registro/login existente para usuario final:
 
 - `POST /api/auth/register` recibe `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`.
-- Devuelve `UserRead`; no devuelve token y no inicia sesion automaticamente.
+- Devuelve `RegisterResponse`; no devuelve token y no inicia sesion automaticamente.
 - El rol publico queda forzado a `user`; no existe registro publico de `admin`.
 - `password_hash` no se expone y el password no debe loguearse.
 - El email se normaliza con `strip().lower()` en registro y login/autenticacion.
 - La busqueda por email es case-insensitive.
 - Duplicados con casing distinto responden `409`.
 - Se captura `IntegrityError` con rollback para race conditions de unique email.
+- Genera correo de verificacion y token one-time-use; el raw token no se guarda en DB.
 
 ## Device Foundation
 

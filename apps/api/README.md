@@ -8,6 +8,8 @@ Backend FastAPI para ProtegID.
 - `GET /api/ready`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/verify-email`
+- `POST /api/auth/resend-verification`
 - `GET /api/auth/me`
 - `GET /api/devices`
 - `POST /api/devices/activate`
@@ -55,18 +57,27 @@ Variables usadas para construir URLs publicas de QR:
 
 `password_hash` no se expone en respuestas. Passwords, tokens de sesion y CSRF tokens no deben loguearse.
 
-Registro publico Sprint 16:
+Registro publico y verificacion de email:
 
 - `POST /api/auth/register` recibe `{ "email": "usuario@example.com", "password": "Password123!", "full_name": "Nombre Usuario" }`.
-- Devuelve `UserRead`, no devuelve token y no inicia sesion automaticamente.
+- Devuelve `RegisterResponse` con `user` y `verification_required`; no devuelve token y no inicia sesion automaticamente.
 - Fuerza `role=user`; no permite registrar admin desde el endpoint publico.
 - El email se normaliza con `strip().lower()` en registro y login/autenticacion.
 - La busqueda por email es case-insensitive.
 - Registro duplicado con casing distinto responde `409`.
 - Se captura `IntegrityError` con rollback.
 - `password_hash` no se expone y passwords no deben loguearse.
+- El registro crea token one-time-use `email_verification`; el raw token no se guarda, solo `token_hash` en `auth_action_tokens`.
+- El link de verificacion apunta a `/verify-email?token=...`.
+- `POST /api/auth/verify-email` es publico y no requiere CSRF; marca el token como usado y verifica el email.
+- `POST /api/auth/resend-verification` requiere sesion, CSRF y rate limiting.
+- Login se permite aunque `email_verified_at` sea `null`.
 
-No hay refresh token, recuperacion de password, email verification ni MFA.
+No hay refresh token, recuperacion de password ni MFA.
+
+Acciones criticas requieren email verificado: `POST /api/devices/activate`, `POST /api/admin/devices`, `PUT /api/devices/{device_id}/emergency-profile` y operaciones admin de QR. Usuarios autenticados no verificados pueden iniciar sesion, consultar `/api/auth/me`, listar sus devices y reenviar verificacion.
+
+Ver detalles operativos en `../../docs/auth-email-verification.md`.
 
 ## Device Foundation
 

@@ -1,6 +1,6 @@
 # ProtegID
 
-ProtegID es una plataforma MVP para identificadores fisicos de emergencia con QR + NFC. Este repositorio contiene el monorepo con frontend Next.js, backend FastAPI y servicios locales base.
+ProtegID es una plataforma para identificadores fisicos de emergencia con QR + NFC, preparada para una version productiva inicial con lanzamiento controlado. Este repositorio contiene el monorepo con frontend Next.js, backend FastAPI y servicios locales base.
 
 ## Stack
 
@@ -33,6 +33,7 @@ docs/         Arquitectura, desarrollo local, seguridad y reglas para IA.
 - `protegid-db`
 - `protegid-redis`
 - `protegid-minio`
+- `mailpit`
 - `protegid-nginx`
 
 ## Primer uso
@@ -52,6 +53,22 @@ La aplicacion queda disponible en:
 - API healthcheck via Nginx: `http://localhost:8080/api/health`
 - API readiness via Nginx: `http://localhost:8080/api/ready`
 - MinIO console: `http://localhost:9001`
+- Mailpit UI: `http://localhost:8025`
+
+## Account Verification Sprint 19
+
+El flujo de registro y verificacion de email esta documentado en `docs/auth-email-verification.md`.
+
+- `POST /api/auth/register` crea usuario no verificado, no inicia sesion automaticamente y dispara email de verificacion.
+- El token raw de verificacion no se guarda en DB; se guarda `token_hash` en `auth_action_tokens`.
+- El link enviado apunta a `/verify-email?token=...`.
+- `POST /api/auth/verify-email` es publico y esta excluido de CSRF porque usa token one-time-use.
+- `POST /api/auth/resend-verification` requiere sesion y CSRF.
+- Login se permite aunque `email_verified_at` sea `null`.
+- Acciones criticas como activar identificador, editar/publicar perfil y operar QR/admin requieren email verificado.
+- Mailpit local recibe los correos en `http://localhost:8025` usando SMTP interno `mailpit:1025`.
+
+Checklist de cierre Sprint 19: registrar usuario, revisar correo en Mailpit, verificar token valido, confirmar error controlado con token invalido, login de usuario no verificado, banner en dashboard, reenvio de verificacion, `403` en acciones criticas sin verificar, usuario verificado puede activar/editar, rate limit responde `429`, `/api/ready` reporta `database/redis/minio` ok y build web pasa.
 
 ## Sesiones Seguras Sprint 18
 
