@@ -4,29 +4,50 @@ import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { ApiRequestError } from "@/lib/api";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, resendVerification } from "@/lib/auth";
 import { activateDeviceWithClaimCode } from "@/lib/devices";
+import type { AuthUser } from "@/types/auth";
 
 type ActivationFormProps = {
   publicId: string;
 };
+
+type ResendVerificationStatus = "idle" | "sending" | "sent" | "error";
+
+const EMAIL_VERIFICATION_REQUIRED_MESSAGE = "Debes verificar tu correo antes de realizar esta acción.";
+
+function isEmailVerified(user: AuthUser | null): boolean {
+  return user?.email_verified_at !== null && user?.email_verified_at !== undefined;
+}
+
+function getResendVerificationErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    return error.message;
+  }
+
+  return "No se pudo reenviar el correo de verificación.";
+}
 
 export function ActivationForm({ publicId }: ActivationFormProps) {
   const activationPath = `/p/${publicId}`;
   const loginHref = `/login?returnTo=${activationPath}`;
   const registerHref = `/register?returnTo=${activationPath}`;
   const dashboardHref = `/dashboard?publicId=${encodeURIComponent(publicId)}`;
-  const [hasSession, setHasSession] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [claimCode, setClaimCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [resendVerificationStatus, setResendVerificationStatus] = useState<ResendVerificationStatus>("idle");
+  const [resendVerificationMessage, setResendVerificationMessage] = useState<string | null>(null);
   const [isActivating, setIsActivating] = useState(false);
+  const hasSession = currentUser !== null;
+  const emailVerified = isEmailVerified(currentUser);
 
   useEffect(() => {
     getCurrentUser()
-      .then(() => setHasSession(true))
-      .catch(() => setHasSession(false))
+      .then((user) => setCurrentUser(user))
+      .catch(() => setCurrentUser(null))
       .finally(() => setSessionChecked(true));
   }, []);
 
@@ -42,6 +63,11 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    if (!emailVerified) {
+      setErrorMessage(EMAIL_VERIFICATION_REQUIRED_MESSAGE);
+      return;
+    }
+
     if (submittedClaimCode.length === 0) {
       setErrorMessage("Código de activación inválido o incompleto.");
       return;
@@ -55,14 +81,32 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
     } catch (error) {
       if (error instanceof ApiRequestError) {
         if (error.status === 401) {
-          setHasSession(false);
+          setCurrentUser(null);
         }
-        setErrorMessage(error.message);
+        setErrorMessage(error.status === 403 ? EMAIL_VERIFICATION_REQUIRED_MESSAGE : error.message);
       } else {
         setErrorMessage("No se pudo activar el identificador.");
       }
     } finally {
       setIsActivating(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    setResendVerificationStatus("sending");
+    setResendVerificationMessage(null);
+
+    try {
+      const response = await resendVerification();
+      setResendVerificationStatus("sent");
+      setResendVerificationMessage(
+        response.verification_sent
+          ? "Correo de verificación reenviado. Revisa tu bandeja de entrada."
+          : "Tu correo ya figura como verificado.",
+      );
+    } catch (error) {
+      setResendVerificationStatus("error");
+      setResendVerificationMessage(getResendVerificationErrorMessage(error));
     }
   }
 
@@ -112,6 +156,34 @@ export function ActivationForm({ publicId }: ActivationFormProps) {
         >
           Completar perfil de emergencia
         </Link>
+      </div>
+    );
+  }
+
+  if (!emailVerified) {
+    return (
+      <div className="space-y-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <div>
+          <p className="font-semibold text-amber-950">Debes verificar tu correo antes de activar este identificador.</p>
+          <p className="mt-1 text-sm leading-6 text-amber-900">
+            Revisa tu email o reenvía el correo de verificación desde esta sesión.
+          </p>
+        </div>
+
+        <button
+          className="inline-flex w-full items-center justify-center rounded-full border border-amber-300 bg-white px-5 py-3 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
+          disabled={resendVerificationStatus === "sending"}
+          onClick={() => void handleResendVerification()}
+          type="button"
+        >
+          {resendVerificationStatus === "sending" ? "Enviando..." : "Reenviar correo de verificación"}
+        </button>
+
+        {resendVerificationMessage ? (
+          <p className={`rounded-xl border px-3 py-2 text-sm font-semibold ${resendVerificationStatus === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-white text-emerald-800"}`}>
+            {resendVerificationMessage}
+          </p>
+        ) : null}
       </div>
     );
   }

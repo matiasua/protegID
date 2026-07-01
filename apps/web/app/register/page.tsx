@@ -46,6 +46,7 @@ function RegisterContent() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCreated, setIsCreated] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -53,6 +54,7 @@ function RegisterContent() {
 
     setErrorMessage(null);
     setIsCreated(false);
+    setRegisteredEmail(null);
 
     const trimmedFullName = fullName.trim();
     const trimmedEmail = email.trim();
@@ -80,12 +82,13 @@ function RegisterContent() {
     setIsLoading(true);
 
     try {
-      await register({
+      const response = await register({
         email: trimmedEmail,
         password,
         full_name: trimmedFullName,
       });
       setPassword("");
+      setRegisteredEmail(response.user.email);
       setIsCreated(true);
     } catch (error) {
       setErrorMessage(getRegisterErrorMessage(error));
@@ -189,10 +192,11 @@ function RegisterContent() {
 
             {isCreated ? (
               <section className="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-                <p className="font-semibold">Cuenta creada correctamente.</p>
-                <p className="mt-2 leading-6">Ahora inicia sesión para continuar con la activación de tu identificador.</p>
+                <p className="font-semibold">Cuenta creada. Te enviamos un correo de verificación.</p>
+                {registeredEmail ? <p className="mt-2 break-words font-medium">Correo registrado: {registeredEmail}</p> : null}
+                <p className="mt-2 leading-6">Revisa tu bandeja de entrada antes de activar identificadores o publicar tu ProtegID.</p>
                 <Button asChild className="mt-4 w-full sm:w-auto">
-                  <Link href={loginHref}>Iniciar sesión</Link>
+                  <Link href={loginHref}>Ir a iniciar sesión</Link>
                 </Button>
               </section>
             ) : null}

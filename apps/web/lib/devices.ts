@@ -11,6 +11,10 @@ function createActivateDeviceRequestError(status: number): ApiRequestError {
     return new ApiRequestError("Sesión expirada o no autenticada.", status);
   }
 
+  if (status === 403) {
+    return new ApiRequestError("Debes verificar tu correo antes de realizar esta acción.", status);
+  }
+
   if (status === 404) {
     return new ApiRequestError("Identificador no encontrado.", status);
   }
@@ -25,6 +29,10 @@ function createActivateDeviceWithClaimCodeRequestError(status: number): ApiReque
 
   if (status === 401) {
     return new ApiRequestError("Sesión expirada o no autenticada.", status);
+  }
+
+  if (status === 403) {
+    return new ApiRequestError("Debes verificar tu correo antes de realizar esta acción.", status);
   }
 
   if (status === 404) {
