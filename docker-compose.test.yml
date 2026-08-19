@@ -1,0 +1,56 @@
+# Stack de PostgreSQL aislado para la suite de integración de apps/api.
+# Deliberadamente standalone (no un override de docker-compose.yml):
+# el stack de desarrollo exige secretos productivos (S3, JWT, Redis) que
+# no deben ser condición para correr tests de infraestructura.
+#
+# IMPORTANTE: el .env raíz define COMPOSE_PROJECT_NAME=protegid, y esa
+# variable de entorno tiene prioridad sobre el `name:` de este archivo.
+# Sin -p explícito, este stack terminaría en el proyecto "protegid" y
+# compartiría la red default con docker-compose.yml -> protegid-api-test
+# podría resolver "protegid-db" (development) por DNS. Por eso el
+# Makefile invoca todo con `-p protegid-test`, y además esta red va
+# nombrada explícitamente para que no dependa únicamente de eso.
+#
+# Uso (usar los targets del Makefile, no invocar suelto):
+#   make test-db-up
+#   make test-api
+#   make test-db-down
+
+services:
+  protegid-db-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: protegid_test
+      POSTGRES_USER: protegid_test
+      POSTGRES_PASSWORD: protegid_test_local_only
+    volumes:
+      - protegid-postgres-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U protegid_test -d protegid_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  protegid-api-test:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: test
+      SERVICE_NAME: protegid-api-test
+      DATABASE_URL: postgresql://protegid_test:protegid_test_local_only@protegid-db-test:5432/protegid_test
+    depends_on:
+      protegid-db-test:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+    working_dir: /app
+    command: ["sh", "-c", "pip install --no-cache-dir -e '.[dev]' && alembic upgrade head && pytest"]
+
+networks:
+  default:
+    name: protegid-test-net
+
+volumes:
+  protegid-postgres-test-data:

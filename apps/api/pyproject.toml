@@ -21,5 +21,14 @@ dependencies = [
   "uvicorn[standard]>=0.34,<1.0"
 ]
 
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27,<1.0",
+  "pytest>=8.3,<9.0"
+]
+
 [tool.setuptools.packages.find]
 include = ["app*", "worker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
