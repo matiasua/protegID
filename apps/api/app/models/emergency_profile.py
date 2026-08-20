@@ -1,13 +1,17 @@
 """Modelo de perfil de emergencia."""
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
 from app.core.db import Base
+
+if TYPE_CHECKING:
+    from app.models.protected_person import ProtectedPerson
 
 
 class EmergencyProfile(Base):
@@ -18,6 +22,12 @@ class EmergencyProfile(Base):
     )
     device_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("devices.id"), nullable=False, unique=True
+    )
+    protected_person_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("protected_persons.id"),
+        nullable=True,
+        index=True,
     )
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     blood_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
@@ -63,4 +73,8 @@ class EmergencyProfile(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    protected_person: Mapped["ProtectedPerson | None"] = relationship(
+        back_populates="emergency_profiles"
     )

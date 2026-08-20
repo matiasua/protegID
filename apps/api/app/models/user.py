@@ -1,13 +1,17 @@
 """Modelo de usuario."""
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
 from app.core.db import Base
+
+if TYPE_CHECKING:
+    from app.models.protected_person import ProtectedPerson
 
 
 class User(Base):
@@ -38,3 +42,7 @@ class User(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    protected_person: Mapped["ProtectedPerson | None"] = relationship(
+        back_populates="account_user"
+    )
