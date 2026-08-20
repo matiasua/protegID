@@ -112,6 +112,35 @@ class EmergencyProfileReadinessRead(BaseModel):
     consent_version: str
 
 
+class ProfileReadinessRead(BaseModel):
+    """Depende EXCLUSIVAMENTE del EmergencyProfile. Nunca recibe un Device."""
+
+    is_ready: bool
+    required_fields: list[str]
+    completed_fields: list[str]
+    missing_fields: list[str]
+
+
+class PublicationEligibilityRead(BaseModel):
+    """Perfil + consentimiento. Sigue sin depender de Device."""
+
+    profile_ready: bool
+    consent_valid: bool
+    can_publish: bool
+    consent_version: str
+
+
+class PublicAccessStatusRead(BaseModel):
+    """Unico nivel que combina Device + ProtectedPerson + EmergencyProfile.
+
+    Especifico de un device/public_id concreto.
+    """
+
+    is_operational: bool
+    device_status: str | None = None
+    blocking_reasons: list[str]
+
+
 class EmergencyProfilePublicRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
