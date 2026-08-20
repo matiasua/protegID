@@ -3,17 +3,27 @@
 Cubre los 10 casos pedidos: DB vacía, usuarios sin/con devices, perfiles
 equivalentes/divergentes, devices huérfanos, soft-delete, y que el reporte de
 divergencia nunca imprime contenido médico completo.
+
+run_preflight/run_consolidation_preflight inspect legacy EmergencyProfile
+states (NULL protected_person_id, >1 ACTIVE profile per person) that, as of
+0012, can only be constructed against a schema older than 0012's NOT NULL
+column / partial unique index. Every test in this file therefore runs
+pinned to 0011 - not 0010: nothing here needs anything 0010 has that 0011
+doesn't (see tests/conftest.py db_at_revision_0011).
 """
 
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Device, EmergencyProfile
+from app.models import Device, EmergencyProfile, ProtectedPerson
 from app.repositories.emergency_profiles import create_profile
 from app.repositories.users import create_user
-from app.services.protected_person_preflight import run_preflight
+from app.services.protected_person_preflight import run_consolidation_preflight, run_preflight
+
+pytestmark = [pytest.mark.migration, pytest.mark.usefixtures("db_at_revision_0011")]
 
 
 def _create_user(session):
@@ -253,3 +263,119 @@ def test_divergence_report_does_not_leak_full_medical_content(
     # field_hashes solo debe contener resúmenes cortos, no el texto real.
     hashes = divergence.field_hashes["medical_conditions"]
     assert all("SUPER-SECRETO" not in h for h in hashes)
+
+
+# --- Bloque 5 (0012): run_consolidation_preflight, agrupa por protected_person_id ---
+
+
+def _create_pp(session, user) -> ProtectedPerson:
+    pp = ProtectedPerson(account_user_id=user.id)
+    session.add(pp)
+    session.commit()
+    session.refresh(pp)
+    return pp
+
+
+def test_consolidation_preflight_flags_null_protected_person_id(
+    session_factory: sessionmaker,
+) -> None:
+    session = session_factory()
+    try:
+        device = _create_device(session, user_id=None)
+        create_profile(session, device_id=device.id, display_name="Sin dueño")
+        report = run_consolidation_preflight(session)
+    finally:
+        session.close()
+
+    assert report.protected_person_id_null_count == 1
+    assert not report.is_safe_to_consolidate
+
+
+def test_consolidation_preflight_single_active_profile(session_factory: sessionmaker) -> None:
+    session = session_factory()
+    try:
+        user = _create_user(session)
+        pp = _create_pp(session, user)
+        device = _create_device(session, user_id=user.id)
+        create_profile(
+            session, protected_person_id=pp.id, device_id=device.id, display_name="Ana"
+        )
+        report = run_consolidation_preflight(session)
+    finally:
+        session.close()
+
+    assert report.persons_with_one_active_profile == 1
+    assert report.persons_with_multiple_active_profiles == 0
+    assert report.is_safe_to_consolidate
+
+
+def test_consolidation_preflight_equivalent_active_group(session_factory: sessionmaker) -> None:
+    session = session_factory()
+    try:
+        user = _create_user(session)
+        pp = _create_pp(session, user)
+        device_a = _create_device(session, user_id=user.id)
+        device_b = _create_device(session, user_id=user.id)
+        create_profile(
+            session, protected_person_id=pp.id, device_id=device_a.id, display_name="Ana"
+        )
+        create_profile(
+            session, protected_person_id=pp.id, device_id=device_b.id, display_name="Ana"
+        )
+        report = run_consolidation_preflight(session)
+    finally:
+        session.close()
+
+    assert report.persons_with_multiple_active_profiles == 1
+    assert len(report.equivalent_active_groups) == 1
+    assert report.divergent_active_groups == []
+    assert report.is_safe_to_consolidate
+
+
+def test_consolidation_preflight_divergent_active_group_is_blocking(
+    session_factory: sessionmaker,
+) -> None:
+    session = session_factory()
+    try:
+        user = _create_user(session)
+        pp = _create_pp(session, user)
+        device_a = _create_device(session, user_id=user.id)
+        device_b = _create_device(session, user_id=user.id)
+        create_profile(
+            session, protected_person_id=pp.id, device_id=device_a.id, display_name="Ana"
+        )
+        create_profile(
+            session, protected_person_id=pp.id, device_id=device_b.id, display_name="Beatriz"
+        )
+        report = run_consolidation_preflight(session)
+    finally:
+        session.close()
+
+    assert report.has_blocking_divergence
+    assert not report.is_safe_to_consolidate
+    divergence = report.divergent_active_groups[0]
+    assert divergence.protected_person_id == pp.id
+    assert "display_name" in divergence.divergent_fields
+
+
+def test_consolidation_preflight_counts_historical_soft_deleted(
+    session_factory: sessionmaker,
+) -> None:
+    session = session_factory()
+    try:
+        user = _create_user(session)
+        pp = _create_pp(session, user)
+        device = _create_device(session, user_id=user.id)
+        profile = create_profile(
+            session, protected_person_id=pp.id, device_id=device.id, display_name="Ana"
+        )
+        profile.deleted_at = datetime.now(UTC)
+        session.commit()
+        report = run_consolidation_preflight(session)
+    finally:
+        session.close()
+
+    assert report.historical_soft_deleted_profiles == 1
+    # soft-deleted no cuenta como activo: el ProtectedPerson queda con 0.
+    assert report.persons_with_one_active_profile == 0
+    assert report.persons_with_multiple_active_profiles == 0

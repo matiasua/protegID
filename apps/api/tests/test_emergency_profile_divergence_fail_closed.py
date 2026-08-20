@@ -1,7 +1,15 @@
 """Bloque 4: divergencia entre EmergencyProfile activos del mismo
 ProtectedPerson (por corrupción/SQL manual) debe fallar cerrado, nunca
-elegir ni reconciliar automáticamente."""
+elegir ni reconciliar automáticamente.
 
+Every test here forces >1 ACTIVE EmergencyProfile for the same
+ProtectedPerson directly (simulating pre-0012 corruption/legacy data), which
+0012's partial unique index forbids constructing at head. Runs pinned to
+0011, the schema state where that corrupted state is still representable
+and the fail-closed behavior under test is exercised (see
+tests/conftest.py db_at_revision_0011)."""
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
@@ -10,6 +18,8 @@ from tests.helpers import (
     create_pending_device_with_claim_code,
     make_active_profile,
 )
+
+pytestmark = [pytest.mark.migration, pytest.mark.usefixtures("db_at_revision_0011")]
 
 
 def _activate(client: TestClient, authed, device, claim_code: str) -> dict:

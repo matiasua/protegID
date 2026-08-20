@@ -41,6 +41,13 @@ _MIGRATION_0011_PATH = (
     / "0011_backfill_protected_persons.py"
 )
 
+# This whole file tests the 0011 migration itself (upgrade/downgrade round
+# trips against real data), not incidental fixture setup - every test but
+# the self-containment check drives command.downgrade/upgrade directly as
+# its subject under test, so it is not centralized behind a
+# db_at_revision_* fixture (see tests/conftest.py for those).
+pytestmark = pytest.mark.migration
+
 
 def _create_device(session, *, user_id=None, status: str = "active") -> Device:
     device = Device(user_id=user_id, public_id=f"dev-{uuid4().hex}", status=status)
@@ -115,10 +122,17 @@ def test_backfill_assigns_protected_person_id_to_legacy_profile(
             session, email=f"{uuid4().hex}@example.com", password_hash="not-a-real-hash"
         )
         device = _create_device(session, user_id=user.id)
+        session.close()
+
+        # protected_person_id is NOT NULL as of 0012: the legacy fixture
+        # (a profile with no protected_person_id at all) can only be
+        # constructed against a schema older than 0012.
+        command.downgrade(cfg, "0010_add_protected_persons")
+
+        session = session_factory()
         profile = create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
-        command.downgrade(cfg, "0010_add_protected_persons")
         command.upgrade(cfg, "0011_backfill_protected_persons")
 
         session = session_factory()
@@ -217,10 +231,14 @@ def test_legacy_backend_can_still_read_profile_by_device_id_after_backfill(
             session, email=f"{uuid4().hex}@example.com", password_hash="not-a-real-hash"
         )
         device = _create_device(session, user_id=user.id)
-        create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
         command.downgrade(cfg, "0010_add_protected_persons")
+
+        session = session_factory()
+        create_profile(session, device_id=device.id, display_name="Ana")
+        session.close()
+
         command.upgrade(cfg, "0011_backfill_protected_persons")
 
         session = session_factory()
@@ -243,11 +261,14 @@ def test_backfill_aborts_on_divergent_profiles_and_writes_nothing(
         )
         device_a = _create_device(session, user_id=user.id)
         device_b = _create_device(session, user_id=user.id)
-        create_profile(session, device_id=device_a.id, display_name="Ana")
-        create_profile(session, device_id=device_b.id, display_name="Beatriz")
         session.close()
 
         command.downgrade(cfg, "0010_add_protected_persons")
+
+        session = session_factory()
+        create_profile(session, device_id=device_a.id, display_name="Ana")
+        create_profile(session, device_id=device_b.id, display_name="Beatriz")
+        session.close()
 
         with pytest.raises(Exception):
             command.upgrade(cfg, "0011_backfill_protected_persons")
@@ -280,10 +301,13 @@ def test_migration_round_trip_0010_to_0011_and_back(
             session, email=f"{uuid4().hex}@example.com", password_hash="not-a-real-hash"
         )
         device = _create_device(session, user_id=user.id)
-        profile = create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
         command.downgrade(cfg, "0010_add_protected_persons")
+
+        session = session_factory()
+        profile = create_profile(session, device_id=device.id, display_name="Ana")
+        session.close()
 
         # upgrade 0010 -> 0011
         command.upgrade(cfg, "0011_backfill_protected_persons")
@@ -399,12 +423,16 @@ def test_soft_deleted_profile_receives_protected_person_id_when_ownership_determ
             session, email=f"{uuid4().hex}@example.com", password_hash="not-a-real-hash"
         )
         device = _create_device(session, user_id=user.id)
+        session.close()
+
+        command.downgrade(cfg, "0010_add_protected_persons")
+
+        session = session_factory()
         profile = create_profile(session, device_id=device.id, display_name="Ana")
         profile.deleted_at = datetime.now(UTC)
         session.commit()
         session.close()
 
-        command.downgrade(cfg, "0010_add_protected_persons")
         command.upgrade(cfg, "0011_backfill_protected_persons")
 
         session = session_factory()
@@ -432,6 +460,11 @@ def test_soft_deleted_divergent_sibling_does_not_block_migration_and_still_gets_
         )
         device_active = _create_device(session, user_id=user.id)
         device_deleted = _create_device(session, user_id=user.id)
+        session.close()
+
+        command.downgrade(cfg, "0010_add_protected_persons")
+
+        session = session_factory()
         active_profile = create_profile(
             session, device_id=device_active.id, display_name="Ana"
         )
@@ -442,7 +475,6 @@ def test_soft_deleted_divergent_sibling_does_not_block_migration_and_still_gets_
         session.commit()
         session.close()
 
-        command.downgrade(cfg, "0010_add_protected_persons")
         # No debe lanzar: la divergencia solo se evalúa entre perfiles activos,
         # y aquí solo hay uno.
         command.upgrade(cfg, "0011_backfill_protected_persons")
@@ -470,10 +502,14 @@ def test_downgrade_aborts_when_device_id_null_exists(
             session, email=f"{uuid4().hex}@example.com", password_hash="not-a-real-hash"
         )
         device = _create_device(session, user_id=user.id)
-        profile = create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
         command.downgrade(cfg, "0010_add_protected_persons")
+
+        session = session_factory()
+        profile = create_profile(session, device_id=device.id, display_name="Ana")
+        session.close()
+
         command.upgrade(cfg, "0011_backfill_protected_persons")
 
         # Simula (fuera del código productivo, que todavía no crea esto) un

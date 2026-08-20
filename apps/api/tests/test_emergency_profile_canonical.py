@@ -1,4 +1,11 @@
-"""Bloque 4: resolución canónica transitoria de EmergencyProfile."""
+"""Bloque 4: resolución canónica transitoria de EmergencyProfile.
+
+Every test here exercises the >1-ACTIVE-profile transitional resolver
+directly, which 0012's partial unique index forbids constructing at head.
+Per Bloque 5 (0012), that resolver stays deployed for the rollout window
+before 0012 has run everywhere - so this module runs pinned to 0011, the
+schema state where that window is real (see tests/conftest.py
+db_at_revision_0011)."""
 
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -13,6 +20,8 @@ from app.services.emergency_profile_canonical import (
 )
 from app.services.protected_persons import get_or_create_protected_person
 from tests.helpers import make_active_profile
+
+pytestmark = [pytest.mark.migration, pytest.mark.usefixtures("db_at_revision_0011")]
 
 
 def _protected_person(session):

@@ -8,8 +8,13 @@ cualquier operación destructiva.
 """
 
 from collections.abc import Generator
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, make_url
@@ -128,6 +133,89 @@ def _flush_rate_limit_state_before_test() -> Generator[None, None, None]:
 
         get_redis_client().flushdb()
     yield
+
+
+_ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
+_HEAD_REVISION = "0012_consolidate_active_ep"
+
+
+def _current_revision(engine: Engine) -> str | None:
+    with engine.connect() as connection:
+        return MigrationContext.configure(connection).get_current_revision()
+
+
+@contextmanager
+def _db_pinned_to_revision(engine: Engine, revision: str) -> Generator[None, None, None]:
+    """Pins the shared test DB's Alembic schema revision to `revision` for the
+    duration of the `with` block, then ALWAYS restores HEAD - including when
+    the block raises.
+
+    Centralizes what several Bloque 4/5 tests need: constructing DB states
+    that 0012 forbids at HEAD (e.g. >1 ACTIVE EmergencyProfile per
+    ProtectedPerson, or a NULL protected_person_id), to exercise transitional
+    behavior that was real before 0012 ran. See `db_at_revision_0011` below
+    for the fixture wrapper tests should actually use.
+
+    Not xdist-safe: this mutates the schema revision of the one shared
+    PostgreSQL test database, so a test using this from one worker would race
+    a test running concurrently on another. Tests that use it are marked
+    `@pytest.mark.migration` (see pyproject.toml) and must keep running
+    serially.
+    """
+    cfg = Config(str(_ALEMBIC_INI))
+    initial = _current_revision(engine)
+    assert initial == _HEAD_REVISION, (
+        "_db_pinned_to_revision expects the suite to start at HEAD "
+        f"({_HEAD_REVISION!r}); found {initial!r} instead - another test "
+        "likely left the schema revision mutated."
+    )
+
+    command.downgrade(cfg, revision)
+    try:
+        yield
+    finally:
+        # Tests using this fixture routinely leave data behind that 0012's
+        # own upgrade() would refuse to run over (>1 ACTIVE profile per
+        # person, NULL protected_person_id, etc.) - that's the point of the
+        # fixture. Wipe it before returning to head; the suite-wide
+        # `_clean_database_after_test` truncate only runs *after* this
+        # fixture's teardown, too late for the upgrade below.
+        with engine.begin() as connection:
+            connection.execute(text("TRUNCATE TABLE devices, emergency_profiles CASCADE"))
+        command.upgrade(cfg, "head")
+        restored = _current_revision(engine)
+        assert restored == _HEAD_REVISION, (
+            f"_db_pinned_to_revision failed to restore HEAD: current revision "
+            f"is {restored!r}, expected {_HEAD_REVISION!r}."
+        )
+
+
+@pytest.fixture
+def db_at_revision_0011(engine: Engine) -> Generator[None, None, None]:
+    """Pins the test DB schema to 0011_backfill_protected_persons for the
+    test, then always restores HEAD (0012), even if the test fails.
+
+    Use via `pytestmark = [pytest.mark.migration, pytest.mark.usefixtures("db_at_revision_0011")]`
+    at module level for files where every test needs this. See
+    `_db_pinned_to_revision` for the mechanics and the xdist caveat.
+    """
+    with _db_pinned_to_revision(engine, "0011_backfill_protected_persons"):
+        yield
+
+
+@pytest.fixture
+def db_at_revision_0010(engine: Engine) -> Generator[None, None, None]:
+    """Pins the test DB schema to 0010_add_protected_persons for the test,
+    then always restores HEAD (0012), even if the test fails.
+
+    Only use this instead of `db_at_revision_0011` when the scenario
+    genuinely needs something 0010 has that 0011 doesn't (e.g.
+    emergency_profiles.protected_person_id being introduced-but-still
+    entirely optional, before 0011's backfill/device_id-nullable changes).
+    See `_db_pinned_to_revision` for the mechanics and the xdist caveat.
+    """
+    with _db_pinned_to_revision(engine, "0010_add_protected_persons"):
+        yield
 
 
 @pytest.fixture

@@ -72,10 +72,15 @@ def test_device_can_exist_with_null_protected_person_id(
         session.close()
 
 
+@pytest.mark.migration
+@pytest.mark.usefixtures("db_at_revision_0010")
 def test_existing_emergency_profile_flow_unaffected_by_protected_person_id(
     session_factory: sessionmaker,
 ) -> None:
-    """El flujo productivo actual (device_id, sin ProtectedPerson) debe seguir intacto."""
+    """Bloque 1: en 0010 (protected_person_id recién agregado, opcional), el
+    flujo device_id-only preexistente sigue intacto. Desde 0012,
+    protected_person_id es NOT NULL en head, así que esta fixture solo puede
+    construirse contra el schema anterior a esa constraint."""
     session = session_factory()
     try:
         user = create_user(
@@ -112,6 +117,7 @@ def test_invalid_protected_person_id_fk_is_rejected(
         session.close()
 
 
+@pytest.mark.migration
 def test_downgrade_0010_removes_protected_person_schema_and_restores_head(
     engine: sa.Engine, test_database_url: str
 ) -> None:

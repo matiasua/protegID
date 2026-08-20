@@ -26,6 +26,13 @@ from tests.helpers import (
     ready_profile_payload,
 )
 
+# Every test in this module constructs >1 ACTIVE EmergencyProfile for the
+# same ProtectedPerson directly, which 0012's partial unique index forbids
+# at head. The shadow-sync layer under test is explicitly kept alive
+# (Bloque 5, item 9) for the deploy window before 0012 has run everywhere,
+# so its tests run pinned to 0011 (see tests/conftest.py db_at_revision_0011).
+pytestmark = [pytest.mark.migration, pytest.mark.usefixtures("db_at_revision_0011")]
+
 
 def _activate(client: TestClient, authed, device, claim_code: str) -> dict:
     response = client.post(

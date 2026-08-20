@@ -251,3 +251,109 @@ def assert_preflight_is_clean(report: PreflightReport) -> None:
     """Fail-fast: aborta si el preflight detectó perfiles divergentes."""
     if report.has_blocking_divergence:
         raise ProfileDivergenceDetected(report)
+
+
+# --- Preflight de solo lectura para 0012 (consolidate_active_ep / Bloque 5) ---
+#
+# Distinto del preflight de arriba (Bloque 3, agrupa por User vía device_id,
+# pensado para *antes* de que protected_person_id exista): este agrupa
+# EmergencyProfile ACTIVOS directamente por protected_person_id, que es la
+# precondición real que 0012 valida (NULL count, >1 activo, equivalencia).
+# Reutiliza diff_fields/CANONICAL_FIELDS de arriba: son la misma noción de
+# "contenido de dominio" en ambos bloques.
+
+
+@dataclass(frozen=True)
+class ActiveProfileDivergence:
+    protected_person_id: UUID
+    profile_ids: tuple[UUID, ...]
+    divergent_fields: tuple[str, ...]
+    field_hashes: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EquivalentActiveProfileGroup:
+    protected_person_id: UUID
+    profile_ids: tuple[UUID, ...]
+
+
+@dataclass
+class ConsolidationPreflightReport:
+    protected_person_id_null_count: int = 0
+    persons_with_one_active_profile: int = 0
+    persons_with_multiple_active_profiles: int = 0
+    equivalent_active_groups: list[EquivalentActiveProfileGroup] = field(default_factory=list)
+    divergent_active_groups: list[ActiveProfileDivergence] = field(default_factory=list)
+    historical_soft_deleted_profiles: int = 0
+
+    @property
+    def has_blocking_divergence(self) -> bool:
+        return bool(self.divergent_active_groups)
+
+    @property
+    def is_safe_to_consolidate(self) -> bool:
+        """True solo si 0012 puede correr sin fail-fast: sin NULLs y sin
+        divergencia entre activos. No implica que no habrá consolidación
+        (equivalent_active_groups puede ser no vacío: eso sí se resuelve
+        automáticamente, de forma determinística)."""
+        return self.protected_person_id_null_count == 0 and not self.has_blocking_divergence
+
+
+def run_consolidation_preflight(bind) -> ConsolidationPreflightReport:
+    """Inspecciona la DB y devuelve un ConsolidationPreflightReport. No
+    escribe nada. Nunca imprime/incluye contenido médico completo: solo ids
+    de fila y hashes seguros por campo divergente (ver `_safe_field_hash`).
+
+    `bind` acepta lo mismo que `run_preflight`: cualquier objeto SQLAlchemy
+    2.0-style con `.execute()` que hidrate instancias ORM.
+    """
+    report = ConsolidationPreflightReport()
+
+    profiles = list(bind.execute(select(EmergencyProfile)).scalars().all())
+
+    report.protected_person_id_null_count = sum(
+        1 for p in profiles if p.protected_person_id is None
+    )
+    report.historical_soft_deleted_profiles = sum(1 for p in profiles if p.deleted_at is not None)
+
+    active_by_person: dict[UUID, list[EmergencyProfile]] = {}
+    for profile in profiles:
+        if profile.deleted_at is not None or profile.protected_person_id is None:
+            continue
+        active_by_person.setdefault(profile.protected_person_id, []).append(profile)
+
+    for protected_person_id, entries in active_by_person.items():
+        if len(entries) == 1:
+            report.persons_with_one_active_profile += 1
+            continue
+
+        report.persons_with_multiple_active_profiles += 1
+
+        first = entries[0]
+        divergent_fields: set[str] = set()
+        for other in entries[1:]:
+            divergent_fields.update(diff_fields(first, other))
+
+        profile_ids = tuple(sorted((p.id for p in entries), key=str))
+
+        if divergent_fields:
+            sorted_fields = tuple(sorted(divergent_fields))
+            field_hashes = {
+                f: tuple(_safe_field_hash(p, f) for p in entries) for f in sorted_fields
+            }
+            report.divergent_active_groups.append(
+                ActiveProfileDivergence(
+                    protected_person_id=protected_person_id,
+                    profile_ids=profile_ids,
+                    divergent_fields=sorted_fields,
+                    field_hashes=field_hashes,
+                )
+            )
+        else:
+            report.equivalent_active_groups.append(
+                EquivalentActiveProfileGroup(
+                    protected_person_id=protected_person_id, profile_ids=profile_ids
+                )
+            )
+
+    return report

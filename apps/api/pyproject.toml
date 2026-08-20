@@ -32,3 +32,6 @@ include = ["app*", "worker*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "migration: test mutates the shared test DB's Alembic schema revision away from HEAD (via tests/conftest.py db_at_revision_* fixtures or direct alembic command calls). Not safe under pytest-xdist: must run serially, or get an isolated DB per worker if xdist is ever enabled.",
+]
