@@ -78,7 +78,7 @@ class EmergencyProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    device_id: UUID
+    device_id: UUID | None = None
     display_name: str | None = None
     blood_type: str | None = None
     allergies: str | None = None
@@ -139,6 +139,13 @@ class PublicAccessStatusRead(BaseModel):
     is_operational: bool
     device_status: str | None = None
     blocking_reasons: list[str]
+
+
+class EmergencyProfileStatusRead(BaseModel):
+    """GET /api/emergency-profile/status. No requiere que el perfil exista."""
+
+    readiness: ProfileReadinessRead
+    publication_eligibility: PublicationEligibilityRead
 
 
 class EmergencyProfilePublicRead(BaseModel):

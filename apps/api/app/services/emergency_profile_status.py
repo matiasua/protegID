@@ -6,9 +6,11 @@ Estos tres dominios se mantienen deliberadamente separados:
 - PublicAccessStatus es el unico nivel que combina Device + ProtectedPerson + EmergencyProfile,
   y es especifico de un device/public_id concreto.
 
-Bloque 2 (paralelo al flujo legacy): estas funciones todavia no gobiernan
-ningun endpoint productivo. Ese recableo ocurre en un bloque posterior.
-Ver app/services/profile_readiness.py para el motor legacy que sigue activo.
+Bloque 4: estas tres funciones son ahora la fuente de verdad productiva
+(account-scoped profile, adapters device-scoped legacy, resolución publica y
+public-access-status privado). app/services/profile_readiness.py (el motor
+legacy que mezclaba Device+EmergencyProfile) ya no tiene callers productivos:
+queda solo por si algun caller externo no migrado todavia depende de el.
 """
 
 from app.core.settings import get_settings

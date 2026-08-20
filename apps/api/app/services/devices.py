@@ -1,18 +1,19 @@
 """Servicio de dispositivos."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.models import Device
+from app.models import Device, User
 from app.repositories.devices import (
-    assign_device_to_user,
     create_device,
     get_device_by_id,
     get_device_by_public_id,
     update_device_status,
 )
 from app.services.device_ids import generate_public_id
+from app.services.protected_persons import get_or_create_protected_person
 
 
 PENDING_ACTIVATION = "pending_activation"
@@ -55,15 +56,24 @@ def create_pending_device(session: Session, label: str | None = None) -> Device:
     )
 
 
-def activate_device_for_user(session: Session, *, public_id: str, user_id: UUID) -> Device:
-    device = get_device_by_public_id(session, public_id)
-    if device is None:
-        raise DeviceNotFoundError("Device not found")
+def activate_device_for_user(session: Session, *, device: Device, user: User) -> Device:
+    """Asocia un Device ya validado (public_id, claim code, lockout, status,
+    ownership) al ProtectedPerson del usuario. El cliente nunca envía
+    protected_person_id: la asociación es exclusivamente server-side.
 
-    if device.status != PENDING_ACTIVATION:
-        raise DeviceActivationError("Device cannot be activated")
+    Un único commit al final evita estados parciales (ProtectedPerson creado
+    pero Device no activado, o viceversa): get_or_create_protected_person se
+    invoca con commit=False y comparte la misma transacción que la
+    activación del Device."""
+    protected_person = get_or_create_protected_person(session, user, commit=False)
 
-    return assign_device_to_user(session, device, user_id)
+    device.user_id = user.id
+    device.protected_person_id = protected_person.id
+    device.status = ACTIVE
+    device.activated_at = datetime.now(UTC)
+    session.commit()
+    session.refresh(device)
+    return device
 
 
 def disable_device(session: Session, device_id: UUID) -> Device:

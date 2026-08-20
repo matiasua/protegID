@@ -28,7 +28,7 @@ web-shell:
 # que tiene prioridad sobre el `name:` del compose file y colapsaría este stack
 # dentro del proyecto de desarrollo si no se fuerza aquí.
 test-db-up:
-	docker compose -p protegid-test -f docker-compose.test.yml up -d --wait protegid-db-test
+	docker compose -p protegid-test -f docker-compose.test.yml up -d --wait protegid-db-test protegid-redis-test
 
 test-db-down:
 	docker compose -p protegid-test -f docker-compose.test.yml down -v

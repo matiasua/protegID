@@ -32,6 +32,14 @@ services:
       retries: 10
       start_period: 5s
 
+  protegid-redis-test:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   protegid-api-test:
     build:
       context: ./apps/api
@@ -40,8 +48,11 @@ services:
       APP_ENV: test
       SERVICE_NAME: protegid-api-test
       DATABASE_URL: postgresql://protegid_test:protegid_test_local_only@protegid-db-test:5432/protegid_test
+      REDIS_URL: redis://protegid-redis-test:6379/0
     depends_on:
       protegid-db-test:
+        condition: service_healthy
+      protegid-redis-test:
         condition: service_healthy
     volumes:
       - ./apps/api:/app
