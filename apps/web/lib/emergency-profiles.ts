@@ -1,11 +1,18 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
 import { csrfHeaders } from "@/lib/csrf";
-import type { EmergencyProfile, EmergencyProfileInput, EmergencyProfileReadiness } from "@/types/emergency-profile";
+import type {
+  EmergencyProfile,
+  EmergencyProfileInput,
+  EmergencyProfileStatus,
+} from "@/types/emergency-profile";
 
-export async function getEmergencyProfile(
-  deviceId: string,
-): Promise<EmergencyProfile | null> {
-  const url = buildApiUrl(`/api/devices/${encodeURIComponent(deviceId)}/emergency-profile`);
+/**
+ * API canonica account-scoped (Bloque 6): no requiere deviceId. El perfil de
+ * emergencia pertenece al usuario/ProtectedPerson, no a un Device.
+ */
+
+export async function getEmergencyProfile(): Promise<EmergencyProfile | null> {
+  const url = buildApiUrl("/api/emergency-profile");
 
   let response: Response;
 
@@ -29,11 +36,10 @@ export async function getEmergencyProfile(
   return (await response.json()) as EmergencyProfile;
 }
 
-export async function upsertEmergencyProfile(
-  deviceId: string,
+export async function updateEmergencyProfile(
   payload: EmergencyProfileInput,
 ): Promise<EmergencyProfile> {
-  const url = buildApiUrl(`/api/devices/${encodeURIComponent(deviceId)}/emergency-profile`);
+  const url = buildApiUrl("/api/emergency-profile");
 
   let response: Response;
 
@@ -58,10 +64,8 @@ export async function upsertEmergencyProfile(
   return (await response.json()) as EmergencyProfile;
 }
 
-export async function getEmergencyProfileReadiness(
-  deviceId: string,
-): Promise<EmergencyProfileReadiness> {
-  const url = buildApiUrl(`/api/devices/${encodeURIComponent(deviceId)}/emergency-profile/readiness`);
+export async function getEmergencyProfileStatus(): Promise<EmergencyProfileStatus> {
+  const url = buildApiUrl("/api/emergency-profile/status");
 
   let response: Response;
 
@@ -79,12 +83,12 @@ export async function getEmergencyProfileReadiness(
   }
 
   if (response.status === 404) {
-    throw new ApiRequestError("Identificador no disponible.", response.status);
+    throw new ApiRequestError("Perfil de emergencia no disponible.", response.status);
   }
 
   if (!response.ok) {
     throw createApiRequestError("No se pudo consultar el estado del perfil", response.status);
   }
 
-  return (await response.json()) as EmergencyProfileReadiness;
+  return (await response.json()) as EmergencyProfileStatus;
 }

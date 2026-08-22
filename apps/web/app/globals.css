@@ -10,12 +10,59 @@
     --card-foreground: 222.2 84% 4.9%;
     --primary: 199 89% 48%;
     --primary-foreground: 210 40% 98%;
+    --primary-hover: 199 89% 42%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
     --border: 214.3 31.8% 91.4%;
+    --border-subtle: 214 20% 94%;
     --input: 214.3 31.8% 91.4%;
     --ring: 199 89% 48%;
     --radius: 0.75rem;
+
+    /* Surfaces (Dashboard v2.1 semantic tokens) - light fallback values */
+    --surface: 0 0% 100%;
+    --surface-muted: 210 40% 96.1%;
+    --surface-elevated: 210 25% 93%;
+
+    /* Semantic status tokens */
+    --success: 152 60% 36%;
+    --success-muted: 152 60% 94%;
+    --warning: 38 92% 40%;
+    --warning-muted: 38 92% 94%;
+    --danger: 0 72% 45%;
+    --danger-muted: 0 72% 95%;
+  }
+
+  /*
+   * Dashboard v2.1 scope: dark navy theme, applied only within the
+   * dashboard app subtree (see app/dashboard/layout.tsx). Marketing,
+   * auth and public profile pages keep the light theme above.
+   */
+  .dashboard-theme {
+    --background: 222 47% 7%;
+    --foreground: 210 30% 96%;
+    --card: 222 40% 11%;
+    --card-foreground: 210 30% 96%;
+    --primary: 199 89% 58%;
+    --primary-foreground: 222 47% 7%;
+    --primary-hover: 199 89% 50%;
+    --muted: 222 30% 15%;
+    --muted-foreground: 217 15% 70%;
+    --border: 217 28% 20%;
+    --border-subtle: 217 24% 16%;
+    --input: 217 28% 20%;
+    --ring: 199 89% 58%;
+
+    --surface: 222 40% 11%;
+    --surface-muted: 222 34% 14%;
+    --surface-elevated: 222 30% 17%;
+
+    --success: 152 55% 48%;
+    --success-muted: 152 40% 16%;
+    --warning: 38 92% 58%;
+    --warning-muted: 38 55% 17%;
+    --danger: 0 75% 62%;
+    --danger-muted: 0 45% 18%;
   }
 
   * {
@@ -24,5 +71,23 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  .text-eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground;
+  }
+
+  .text-page-title {
+    @apply text-2xl font-bold tracking-tight text-foreground sm:text-3xl;
+  }
+
+  .text-section-title {
+    @apply text-lg font-semibold tracking-tight text-foreground;
+  }
+
+  .text-caption {
+    @apply text-xs text-muted-foreground;
   }
 }

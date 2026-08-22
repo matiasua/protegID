@@ -1,13 +1,17 @@
 """Modelo de dispositivo."""
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
 from app.core.db import Base
+
+if TYPE_CHECKING:
+    from app.models.protected_person import ProtectedPerson
 
 
 class Device(Base):
@@ -18,6 +22,12 @@ class Device(Base):
     )
     user_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    protected_person_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("protected_persons.id"),
+        nullable=True,
+        index=True,
     )
     public_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -51,4 +61,8 @@ class Device(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    protected_person: Mapped["ProtectedPerson | None"] = relationship(
+        back_populates="devices"
     )

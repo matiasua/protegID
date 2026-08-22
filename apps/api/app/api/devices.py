@@ -1,16 +1,21 @@
 """Endpoints protegidos de dispositivos."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep, VerifiedEmailDep
 from app.core.rate_limit import check_rate_limit, get_client_ip
 from app.core.settings import get_settings
-from app.repositories.devices import get_device_by_public_id, get_devices_by_user_id
+from app.repositories.devices import get_device_by_id, get_device_by_public_id, get_devices_by_user_id
 from app.schemas.device import DeviceActivate, DeviceCreate, DeviceRead
+from app.schemas.emergency_profile import PublicAccessStatusRead
 from app.services.claim_codes import verify_claim_code
-from app.services.devices import create_pending_device
+from app.services.devices import activate_device_for_user, create_pending_device
+from app.services.emergency_profile_canonical import CanonicalProfileDivergenceError
+from app.services.emergency_profiles import get_public_access_status_for_device
+from app.services.protected_persons import ProtectedPersonSoftDeletedError
 
 router = APIRouter(tags=["devices"])
 
@@ -80,15 +85,16 @@ def activate_device(
             detail="Invalid activation data",
         )
 
-    device.user_id = current_user.id
-    device.status = "active"
-    device.activated_at = now
     device.claimed_at = now
     device.claim_attempts = 0
     device.claim_locked_until = None
-    session.commit()
-    session.refresh(device)
-    return device
+    try:
+        return activate_device_for_user(session, device=device, user=current_user)
+    except ProtectedPersonSoftDeletedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Protected person is not available",
+        ) from error
 
 
 @router.post(
@@ -108,3 +114,28 @@ def create_admin_device(
         )
 
     return create_pending_device(session, label=payload.label if payload else None)
+
+
+@router.get(
+    "/api/devices/{device_id}/public-access-status",
+    response_model=PublicAccessStatusRead,
+)
+def get_device_public_access_status(
+    device_id: UUID,
+    session: SessionDep,
+    current_user: CurrentUserDep,
+):
+    device = get_device_by_id(session, device_id)
+    if device is None or device.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+
+    try:
+        return get_public_access_status_for_device(session, device)
+    except CanonicalProfileDivergenceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Emergency profile data integrity error",
+        ) from error
