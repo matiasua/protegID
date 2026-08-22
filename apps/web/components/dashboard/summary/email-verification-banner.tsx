@@ -1,54 +1,19 @@
 "use client";
 
-import { useState } from "react";
-
 import { Button } from "@/components/ui/button";
-import { ApiRequestError } from "@/lib/api";
-import { resendVerification } from "@/lib/auth";
+import { isEmailVerified } from "@/components/dashboard/account/types";
+import { useResendVerification } from "@/components/dashboard/account/use-resend-verification";
 import type { AuthUser } from "@/types/auth";
-
-type ResendVerificationStatus = "idle" | "sending" | "sent" | "error";
-
-function isEmailVerified(user: AuthUser | null): boolean {
-  return user?.email_verified_at !== null && user?.email_verified_at !== undefined;
-}
-
-function getResendVerificationErrorMessage(error: unknown): string {
-  if (error instanceof ApiRequestError) {
-    return error.message;
-  }
-
-  return "No se pudo reenviar el correo de verificación.";
-}
 
 export interface EmailVerificationBannerProps {
   currentUser: AuthUser | null;
 }
 
 export function EmailVerificationBanner({ currentUser }: EmailVerificationBannerProps) {
-  const [status, setStatus] = useState<ResendVerificationStatus>("idle");
-  const [message, setMessage] = useState<string | null>(null);
+  const { status, message, resend } = useResendVerification();
 
   if (!currentUser || isEmailVerified(currentUser)) {
     return null;
-  }
-
-  async function handleResendVerification() {
-    setStatus("sending");
-    setMessage(null);
-
-    try {
-      const response = await resendVerification();
-      setStatus("sent");
-      setMessage(
-        response.verification_sent
-          ? "Correo de verificación reenviado. Revisa tu bandeja de entrada."
-          : "Tu correo ya figura como verificado.",
-      );
-    } catch (error) {
-      setStatus("error");
-      setMessage(getResendVerificationErrorMessage(error));
-    }
   }
 
   return (
@@ -66,7 +31,7 @@ export function EmailVerificationBanner({ currentUser }: EmailVerificationBanner
         <Button
           className="w-full sm:w-auto"
           disabled={status === "sending"}
-          onClick={() => void handleResendVerification()}
+          onClick={() => void resend()}
           type="button"
           variant="outline"
         >
