@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/dashboard/page-header";
+import { useDashboardSession } from "@/app/dashboard/dashboard-session-context";
 import { ApiRequestError } from "@/lib/api";
-import { getCurrentUser, logout, resendVerification } from "@/lib/auth";
+import { resendVerification } from "@/lib/auth";
 import { activateDeviceWithClaimCode, getDevicePublicAccessStatus, getMyDevices } from "@/lib/devices";
 import { getEmergencyProfile, getEmergencyProfileStatus, updateEmergencyProfile } from "@/lib/emergency-profiles";
 import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
@@ -129,18 +130,6 @@ const PROFILE_FIELD_GROUPS: ProfileFieldGroup[] = [
     ],
   },
 ];
-
-function getValidationErrorMessage(error: unknown): string {
-  if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
-    return "Sesión inválida, expirada o sin permisos para acceder al panel.";
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "No se pudo validar la sesión.";
-}
 
 function getDevicesErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
@@ -589,7 +578,7 @@ function getDeviceStatusClass(status: Device["status"]): string {
 }
 
 function DashboardContent() {
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const { user: currentUser } = useDashboardSession();
   const [devices, setDevices] = useState<Device[]>([]);
   const [qrStatusByDeviceId, setQrStatusByDeviceId] = useState<Record<string, DeviceQrStatusState>>({});
   const [publicAccessByDeviceId, setPublicAccessByDeviceId] = useState<Record<string, PublicAccessStatusState>>({});
@@ -599,7 +588,6 @@ function DashboardContent() {
   const [profileForm, setProfileForm] = useState<ProfileFormState>(() => createEmptyProfileForm());
   const [profileStatus, setProfileStatus] = useState<EmergencyProfileStatus | null>(null);
   const [hasExistingProfile, setHasExistingProfile] = useState<boolean | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
   const [activationErrorMessage, setActivationErrorMessage] = useState<string | null>(null);
   const [activationSuccessMessage, setActivationSuccessMessage] = useState<string | null>(null);
@@ -608,8 +596,6 @@ function DashboardContent() {
   const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
   const [resendVerificationStatus, setResendVerificationStatus] = useState<ResendVerificationStatus>("idle");
   const [resendVerificationMessage, setResendVerificationMessage] = useState<string | null>(null);
-  const [hasCheckedSession, setHasCheckedSession] = useState(false);
-  const [isValidating, setIsValidating] = useState(false);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [isActivatingDevice, setIsActivatingDevice] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -621,8 +607,10 @@ function DashboardContent() {
   const canManageQr = currentUserIsAdmin && currentUserEmailVerified && qrPermissionMessage === null;
 
   useEffect(() => {
-    void loadAuthenticatedDashboard().finally(() => setHasCheckedSession(true));
-  }, []);
+    if (currentUser) {
+      void loadAuthenticatedDashboard(currentUser);
+    }
+  }, [currentUser]);
 
   function resetProfileEditor() {
     setProfile(null);
@@ -645,7 +633,6 @@ function DashboardContent() {
   }
 
   function resetAuthenticatedState() {
-    setCurrentUser(null);
     setDevices([]);
     setQrStatusByDeviceId({});
     setPublicAccessByDeviceId({});
@@ -694,26 +681,10 @@ function DashboardContent() {
     }));
   }
 
-  async function loadAuthenticatedDashboard() {
-    let validatedUser: AuthUser | null = null;
-
-    setErrorMessage(null);
+  async function loadAuthenticatedDashboard(validatedUser: AuthUser) {
     setDeviceErrorMessage(null);
     setQrAdminMessage(null);
     resetAuthenticatedState();
-
-    setIsValidating(true);
-
-    try {
-      const user = await getCurrentUser();
-      validatedUser = user;
-      setCurrentUser(user);
-    } catch (error) {
-      setErrorMessage(getValidationErrorMessage(error));
-      return;
-    } finally {
-      setIsValidating(false);
-    }
 
     void loadProfile();
 
@@ -1156,14 +1127,6 @@ function DashboardContent() {
     }
   }
 
-  async function handleLogout() {
-    await logout();
-    setErrorMessage(null);
-    setDeviceErrorMessage(null);
-    setQrAdminMessage(null);
-    resetAuthenticatedState();
-  }
-
   async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1226,128 +1189,41 @@ function DashboardContent() {
   const profileConsentAccepted = isConsentAccepted(profileForm, profileStatus);
 
   return (
-    <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-950 sm:px-6 lg:py-12">
-      <section className="mx-auto max-w-6xl space-y-6">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+    <>
+      <PageHeader
+        description="Gestiona tu perfil de emergencia y tus identificadores ProtegID. La sesión se mantiene con una cookie HttpOnly emitida por el backend."
+        title="Resumen"
+      />
+
+      {currentUser && !currentUserEmailVerified ? (
+        <section
+          aria-labelledby="email-verification-title"
+          className="rounded-lg border border-warning/30 bg-warning-muted p-4 text-sm text-foreground sm:p-5"
+        >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <Link className="inline-flex text-sm font-medium text-sky-700 underline-offset-4 hover:underline" href="/">
-                Volver al inicio
-              </Link>
-              <p className="mt-6 text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Área privada</p>
-              <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Panel privado ProtegID</h1>
-              <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-                Gestiona tu perfil de emergencia y tus identificadores ProtegID. La sesión se mantiene con una cookie HttpOnly emitida por el backend.
+              <h2 className="font-semibold" id="email-verification-title">Tu correo aún no está verificado.</h2>
+              <p className="mt-2 leading-6 text-muted-foreground">
+                Verifica tu correo para activar identificadores, editar tu perfil de emergencia y publicarlo.
               </p>
             </div>
-
-            <span className="w-fit rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-sky-800">
-              Sesión segura
-            </span>
+            <Button
+              className="w-full sm:w-auto"
+              disabled={resendVerificationStatus === "sending"}
+              onClick={() => void handleResendVerification()}
+              type="button"
+              variant="outline"
+            >
+              {resendVerificationStatus === "sending" ? "Enviando..." : "Reenviar correo de verificación"}
+            </Button>
           </div>
-        </section>
-
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8" aria-labelledby="session-status-title">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">Estado de sesión</p>
-              <h2 className="mt-2 text-2xl font-bold tracking-tight" id="session-status-title">
-                Acceso privado
-              </h2>
-            </div>
-
-            {currentUser ? (
-              <Button className="w-full sm:w-auto" onClick={() => void handleLogout()} type="button" variant="outline">
-                Cerrar sesión
-              </Button>
-            ) : null}
-          </div>
-
-          {!hasCheckedSession ? (
-            <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-              Revisando sesión...
+          {resendVerificationMessage ? (
+            <p className={`mt-4 rounded-md border px-3 py-2 font-medium ${resendVerificationStatus === "error" ? "border-danger/30 bg-danger-muted text-danger" : "border-success/30 bg-success-muted text-success"}`}>
+              {resendVerificationMessage}
             </p>
-          ) : null}
-
-          {isValidating ? (
-            <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-              Validando sesión contra la API...
-            </p>
-          ) : null}
-
-          {errorMessage ? (
-            <p className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
-              {errorMessage}
-            </p>
-          ) : null}
-
-          {currentUser ? (
-            <dl className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nombre</dt>
-                <dd className="mt-2 text-sm font-semibold text-slate-950">{currentUser.full_name ?? "Sin nombre informado"}</dd>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</dt>
-                <dd className="mt-2 break-words text-sm font-semibold text-slate-950">{currentUser.email}</dd>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role</dt>
-                <dd className="mt-2 text-sm font-semibold text-slate-950">{currentUser.role}</dd>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</dt>
-                <dd className="mt-2 text-sm font-semibold text-slate-950">{currentUser.status}</dd>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Verificación email</dt>
-                <dd className="mt-2 text-sm font-semibold text-slate-950">
-                  {currentUserEmailVerified ? "Verificado" : "Pendiente"}
-                </dd>
-              </div>
-            </dl>
-          ) : null}
-
-          {currentUser && !currentUserEmailVerified ? (
-            <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" aria-labelledby="email-verification-title">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h3 className="font-semibold" id="email-verification-title">Tu correo aún no está verificado.</h3>
-                  <p className="mt-2 leading-6">
-                    Verifica tu correo para activar identificadores, editar tu perfil de emergencia y publicarlo.
-                  </p>
-                </div>
-                <Button
-                  className="w-full sm:w-auto"
-                  disabled={resendVerificationStatus === "sending"}
-                  onClick={() => void handleResendVerification()}
-                  type="button"
-                  variant="outline"
-                >
-                  {resendVerificationStatus === "sending" ? "Enviando..." : "Reenviar correo de verificación"}
-                </Button>
-              </div>
-              {resendVerificationMessage ? (
-                <p className={`mt-4 rounded-xl border px-3 py-2 font-medium ${resendVerificationStatus === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-white text-emerald-800"}`}>
-                  {resendVerificationMessage}
-                </p>
-              ) : null}
-            </section>
-          ) : null}
-
-          {hasCheckedSession && !isValidating && !currentUser ? (
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              {!errorMessage ? (
-                <p className="text-sm leading-6 text-slate-600">
-                  Aún no hay una sesión activa. Inicia sesión para acceder al panel privado.
-                </p>
-              ) : null}
-              <Button asChild className="mt-4 w-full sm:w-auto">
-                <Link href="/login">Ir a login</Link>
-              </Button>
-            </div>
           ) : null}
         </section>
+      ) : null}
 
         {currentUser ? (
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8" aria-labelledby="devices-title">
@@ -1845,8 +1721,7 @@ function DashboardContent() {
             </form>
           </section>
         ) : null}
-      </section>
-    </main>
+    </>
   );
 }
 
