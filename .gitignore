@@ -38,3 +38,10 @@ pnpm-debug.log*
 
 # CodeGraph local index, if initialized later
 .codegraph/
+
+# Playwright (apps/web E2E)
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/qa-screenshots/
+apps/web/blob-report/
+*.tsbuildinfo
