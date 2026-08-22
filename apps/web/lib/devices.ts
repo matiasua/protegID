@@ -1,6 +1,7 @@
 import { ApiRequestError, buildApiUrl, createApiRequestError } from "@/lib/api";
 import { csrfHeaders } from "@/lib/csrf";
 import type { Device } from "@/types/device";
+import type { PublicAccessStatus } from "@/types/emergency-profile";
 
 function createActivateDeviceRequestError(status: number): ApiRequestError {
   if (status === 400) {
@@ -48,6 +49,48 @@ function createActivateDeviceWithClaimCodeRequestError(status: number): ApiReque
   }
 
   return new ApiRequestError("No se pudo activar el identificador.", status);
+}
+
+function createPublicAccessStatusRequestError(status: number): ApiRequestError {
+  if (status === 401) {
+    return new ApiRequestError("Sesión expirada o no autenticada.", status);
+  }
+
+  if (status === 404) {
+    return new ApiRequestError("Identificador no encontrado.", status);
+  }
+
+  if (status === 409) {
+    return new ApiRequestError("Error de integridad del perfil de emergencia.", status);
+  }
+
+  return new ApiRequestError("No se pudo consultar el estado del identificador.", status);
+}
+
+/**
+ * "¿Este identificador concreto puede exponer actualmente el perfil?".
+ * No es ProfileReadiness: un Device inoperativo no implica un perfil
+ * incompleto, y un perfil incompleto no se deriva desde aquí.
+ */
+export async function getDevicePublicAccessStatus(deviceId: string): Promise<PublicAccessStatus> {
+  const url = buildApiUrl(`/api/devices/${encodeURIComponent(deviceId)}/public-access-status`);
+
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      cache: "no-store",
+      credentials: "include",
+    });
+  } catch (error) {
+    throw new Error("No se pudo consultar el estado del identificador.", { cause: error });
+  }
+
+  if (!response.ok) {
+    throw createPublicAccessStatusRequestError(response.status);
+  }
+
+  return (await response.json()) as PublicAccessStatus;
 }
 
 export async function getMyDevices(): Promise<Device[]> {

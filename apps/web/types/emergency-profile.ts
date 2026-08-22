@@ -1,8 +1,12 @@
 type NullableString = string | null;
 
+/**
+ * Perfil de emergencia — account-scoped (ProtectedPerson), no Device.
+ * El backend puede incluir un campo device_id legacy en el payload; el
+ * frontend lo ignora deliberadamente y no lo modela aquí.
+ */
 export type EmergencyProfile = {
   id: string;
-  device_id: string;
   display_name: NullableString;
   blood_type: NullableString;
   allergies: NullableString;
@@ -41,15 +45,35 @@ export type EmergencyProfileInput = {
   public_consent_version?: string | null;
 };
 
-export type EmergencyProfileReadiness = {
+/** Depende exclusivamente del EmergencyProfile. Nunca depende de un Device. */
+export type ProfileReadiness = {
   is_ready: boolean;
-  can_publish: boolean;
-  is_public_operational: boolean;
-  device_status: string | null;
-  public_profile_enabled: boolean;
   required_fields: string[];
   completed_fields: string[];
   missing_fields: string[];
-  blocking_reasons: string[];
+};
+
+/** Perfil + consentimiento. Sigue sin depender de Device. */
+export type PublicationEligibility = {
+  profile_ready: boolean;
+  consent_valid: boolean;
+  can_publish: boolean;
   consent_version: string;
+};
+
+/** GET /api/emergency-profile/status. No requiere que el perfil exista. */
+export type EmergencyProfileStatus = {
+  readiness: ProfileReadiness;
+  publication_eligibility: PublicationEligibility;
+};
+
+/**
+ * Unico nivel que combina Device + ProtectedPerson + EmergencyProfile.
+ * Especifico de un device/public_id concreto: "¿este identificador puede
+ * exponer el perfil ahora?". No es ProfileReadiness.
+ */
+export type PublicAccessStatus = {
+  is_operational: boolean;
+  device_status: string | null;
+  blocking_reasons: string[];
 };
