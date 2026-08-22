@@ -1,63 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, type FormEvent, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { useDashboardSession } from "@/app/dashboard/dashboard-session-context";
 import { ApiRequestError } from "@/lib/api";
 import { resendVerification } from "@/lib/auth";
 import { activateDeviceWithClaimCode, getDevicePublicAccessStatus, getMyDevices } from "@/lib/devices";
-import { getEmergencyProfile, getEmergencyProfileStatus, updateEmergencyProfile } from "@/lib/emergency-profiles";
 import { createDeviceQr, downloadDeviceQr, getDeviceQrStatus } from "@/lib/qr-codes";
 import type { AuthUser } from "@/types/auth";
 import type { Device } from "@/types/device";
-import type {
-  EmergencyProfile,
-  EmergencyProfileInput,
-  EmergencyProfileStatus,
-  PublicAccessStatus,
-} from "@/types/emergency-profile";
+import type { PublicAccessStatus } from "@/types/emergency-profile";
 import type { DeviceQrStatus } from "@/types/qr-code";
-
-type ProfileFormState = {
-  display_name: string;
-  blood_type: string;
-  allergies: string;
-  medical_conditions: string;
-  medications: string;
-  emergency_contact_name: string;
-  emergency_contact_phone: string;
-  emergency_contact_relationship: string;
-  notes: string;
-  is_public: boolean;
-  medical_conditions_none: boolean;
-  allergies_none: boolean;
-  medications_none: boolean;
-  public_consent_accepted_at: string | null;
-  public_consent_version: string | null;
-};
-
-type ProfileTextFieldName =
-  | "display_name"
-  | "blood_type"
-  | "allergies"
-  | "medical_conditions"
-  | "medications"
-  | "emergency_contact_name"
-  | "emergency_contact_phone"
-  | "emergency_contact_relationship"
-  | "notes";
-
-type ProfileDecisionFieldName = "medical_conditions_none" | "allergies_none" | "medications_none";
-
-type ProfileFieldConfig = {
-  name: ProfileTextFieldName;
-  label: string;
-  multiline?: boolean;
-  noneField?: ProfileDecisionFieldName;
-  noneLabel?: string;
-};
 
 type DeviceQrActionMessage = {
   kind: "success" | "error";
@@ -79,57 +36,9 @@ type PublicAccessStatusState = {
   hasError: boolean;
 };
 
-type ProfileFieldGroup = {
-  title: string;
-  fields: ProfileFieldConfig[];
-};
-
 type ResendVerificationStatus = "idle" | "sending" | "sent" | "error";
 
 const EMAIL_VERIFICATION_REQUIRED_MESSAGE = "Debes verificar tu correo antes de realizar esta acción.";
-
-const PROFILE_FIELD_GROUPS: ProfileFieldGroup[] = [
-  {
-    title: "Datos personales",
-    fields: [{ name: "display_name", label: "Nombre visible" }],
-  },
-  {
-    title: "Información médica",
-    fields: [
-      { name: "blood_type", label: "Tipo de sangre" },
-      {
-        name: "allergies",
-        label: "Alergias",
-        multiline: true,
-        noneField: "allergies_none",
-        noneLabel: "Sin alergias declaradas",
-      },
-      {
-        name: "medical_conditions",
-        label: "Condiciones medicas",
-        multiline: true,
-        noneField: "medical_conditions_none",
-        noneLabel: "Sin condiciones medicas declaradas",
-      },
-      {
-        name: "medications",
-        label: "Medicamentos",
-        multiline: true,
-        noneField: "medications_none",
-        noneLabel: "Sin medicamentos declarados",
-      },
-      { name: "notes", label: "Notas", multiline: true },
-    ],
-  },
-  {
-    title: "Contacto de emergencia",
-    fields: [
-      { name: "emergency_contact_name", label: "Nombre del contacto de emergencia" },
-      { name: "emergency_contact_phone", label: "Telefono del contacto de emergencia" },
-      { name: "emergency_contact_relationship", label: "Relacion del contacto" },
-    ],
-  },
-];
 
 function getDevicesErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError && (error.status === 401 || error.status === 403)) {
@@ -173,42 +82,6 @@ function getActivationErrorMessage(error: unknown): string {
   return "No se pudo activar el identificador.";
 }
 
-function getProfileErrorMessage(error: unknown, fallbackMessage: string): string {
-  if (error instanceof ApiRequestError && error.status === 401) {
-    return "No autorizado para gestionar este perfil de emergencia.";
-  }
-
-  if (error instanceof ApiRequestError && error.status === 403) {
-    return EMAIL_VERIFICATION_REQUIRED_MESSAGE;
-  }
-
-  if (error instanceof ApiRequestError && error.status === 409) {
-    return "Error de integridad del perfil de emergencia. Contacta a soporte.";
-  }
-
-  if (error instanceof ApiRequestError && error.status === 422) {
-    return "Completa los campos obligatorios antes de publicar el perfil.";
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return fallbackMessage;
-}
-
-function getReadinessFieldLabel(field: string): string {
-  const labels: Record<string, string> = {
-    display_name: "Nombre visible",
-    emergency_contact_name: "Nombre del contacto de emergencia",
-    emergency_contact_phone: "Telefono del contacto de emergencia",
-    medical_conditions_decision: "Declarar condiciones medicas o marcar que no hay",
-    allergies_decision: "Declarar alergias o marcar que no hay",
-  };
-
-  return labels[field] ?? field;
-}
-
 function getPublicAccessBlockingReasonLabel(reason: string): string {
   const labels: Record<string, string> = {
     device_missing: "Identificador no disponible.",
@@ -223,61 +96,6 @@ function getPublicAccessBlockingReasonLabel(reason: string): string {
   };
 
   return labels[reason] ?? reason;
-}
-
-/**
- * Estado de publicacion del perfil (cuenta), independiente de cualquier
- * Device: A) incompleto, B) listo pero sin consentimiento vigente,
- * C) elegible pero privado, D) publico.
- */
-function getProfilePublicationStateLabel(
-  profile: EmergencyProfile | null,
-  profileStatus: EmergencyProfileStatus | null,
-): string {
-  if (!profileStatus) {
-    return "Consultando perfil";
-  }
-
-  if (!profileStatus.readiness.is_ready) {
-    return "Perfil incompleto";
-  }
-
-  if (!profileStatus.publication_eligibility.consent_valid) {
-    return "Perfil listo, falta consentimiento vigente";
-  }
-
-  if (!profile?.is_public) {
-    return "Perfil listo para publicar (privado)";
-  }
-
-  return "Perfil publico";
-}
-
-function getProfilePublicationStateClass(
-  profile: EmergencyProfile | null,
-  profileStatus: EmergencyProfileStatus | null,
-): string {
-  if (!profileStatus || !profileStatus.readiness.is_ready) {
-    return "border-amber-200 bg-amber-50 text-amber-900";
-  }
-
-  if (!profileStatus.publication_eligibility.consent_valid) {
-    return "border-amber-200 bg-amber-50 text-amber-900";
-  }
-
-  if (profile?.is_public) {
-    return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  }
-
-  return "border-sky-200 bg-sky-50 text-sky-800";
-}
-
-function isConsentAccepted(form: ProfileFormState, profileStatus: EmergencyProfileStatus | null): boolean {
-  return Boolean(
-    form.public_consent_accepted_at &&
-      form.public_consent_version &&
-      (!profileStatus || form.public_consent_version === profileStatus.publication_eligibility.consent_version),
-  );
 }
 
 function getQrGenerationErrorMessage(error: unknown): string {
@@ -431,71 +249,6 @@ function getPublicAccessStatusClass(state: PublicAccessStatusState | undefined):
     : "border-amber-200 bg-amber-50 text-amber-900";
 }
 
-function createEmptyProfileForm(): ProfileFormState {
-  return {
-    display_name: "",
-    blood_type: "",
-    allergies: "",
-    medical_conditions: "",
-    medications: "",
-    emergency_contact_name: "",
-    emergency_contact_phone: "",
-    emergency_contact_relationship: "",
-    notes: "",
-    is_public: false,
-    medical_conditions_none: false,
-    allergies_none: false,
-    medications_none: false,
-    public_consent_accepted_at: null,
-    public_consent_version: null,
-  };
-}
-
-function createProfileForm(profile: EmergencyProfile): ProfileFormState {
-  return {
-    display_name: profile.display_name ?? "",
-    blood_type: profile.blood_type ?? "",
-    allergies: profile.allergies ?? "",
-    medical_conditions: profile.medical_conditions ?? "",
-    medications: profile.medications ?? "",
-    emergency_contact_name: profile.emergency_contact_name ?? "",
-    emergency_contact_phone: profile.emergency_contact_phone ?? "",
-    emergency_contact_relationship: profile.emergency_contact_relationship ?? "",
-    notes: profile.notes ?? "",
-    is_public: profile.is_public,
-    medical_conditions_none: profile.medical_conditions_none,
-    allergies_none: profile.allergies_none,
-    medications_none: profile.medications_none,
-    public_consent_accepted_at: profile.public_consent_accepted_at,
-    public_consent_version: profile.public_consent_version,
-  };
-}
-
-function normalizeProfileValue(value: string): string | null {
-  const normalizedValue = value.trim();
-  return normalizedValue.length > 0 ? normalizedValue : null;
-}
-
-function createProfilePayload(form: ProfileFormState): EmergencyProfileInput {
-  return {
-    display_name: normalizeProfileValue(form.display_name),
-    blood_type: normalizeProfileValue(form.blood_type),
-    allergies: form.allergies_none ? null : normalizeProfileValue(form.allergies),
-    medical_conditions: form.medical_conditions_none ? null : normalizeProfileValue(form.medical_conditions),
-    medications: form.medications_none ? null : normalizeProfileValue(form.medications),
-    emergency_contact_name: normalizeProfileValue(form.emergency_contact_name),
-    emergency_contact_phone: normalizeProfileValue(form.emergency_contact_phone),
-    emergency_contact_relationship: normalizeProfileValue(form.emergency_contact_relationship),
-    notes: normalizeProfileValue(form.notes),
-    is_public: form.is_public,
-    medical_conditions_none: form.medical_conditions_none,
-    allergies_none: form.allergies_none,
-    medications_none: form.medications_none,
-    public_consent_accepted_at: form.public_consent_accepted_at,
-    public_consent_version: form.public_consent_version,
-  };
-}
-
 function formatActivatedAt(value: string | null): string {
   if (!value) {
     return "No activado";
@@ -584,23 +337,14 @@ function DashboardContent() {
   const [publicAccessByDeviceId, setPublicAccessByDeviceId] = useState<Record<string, PublicAccessStatusState>>({});
   const [activationPublicId, setActivationPublicId] = useState("");
   const [activationClaimCode, setActivationClaimCode] = useState("");
-  const [profile, setProfile] = useState<EmergencyProfile | null>(null);
-  const [profileForm, setProfileForm] = useState<ProfileFormState>(() => createEmptyProfileForm());
-  const [profileStatus, setProfileStatus] = useState<EmergencyProfileStatus | null>(null);
-  const [hasExistingProfile, setHasExistingProfile] = useState<boolean | null>(null);
   const [deviceErrorMessage, setDeviceErrorMessage] = useState<string | null>(null);
   const [activationErrorMessage, setActivationErrorMessage] = useState<string | null>(null);
   const [activationSuccessMessage, setActivationSuccessMessage] = useState<string | null>(null);
   const [qrAdminMessage, setQrAdminMessage] = useState<string | null>(null);
-  const [profileErrorMessage, setProfileErrorMessage] = useState<string | null>(null);
-  const [profileSuccessMessage, setProfileSuccessMessage] = useState<string | null>(null);
   const [resendVerificationStatus, setResendVerificationStatus] = useState<ResendVerificationStatus>("idle");
   const [resendVerificationMessage, setResendVerificationMessage] = useState<string | null>(null);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
   const [isActivatingDevice, setIsActivatingDevice] = useState(false);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
-  const [isLoadingProfileStatus, setIsLoadingProfileStatus] = useState(false);
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const currentUserIsAdmin = isAdminUser(currentUser);
   const currentUserEmailVerified = isEmailVerified(currentUser);
   const qrPermissionMessage = currentUserIsAdmin ? qrAdminMessage : null;
@@ -611,18 +355,6 @@ function DashboardContent() {
       void loadAuthenticatedDashboard(currentUser);
     }
   }, [currentUser]);
-
-  function resetProfileEditor() {
-    setProfile(null);
-    setProfileForm(createEmptyProfileForm());
-    setProfileStatus(null);
-    setHasExistingProfile(null);
-    setProfileErrorMessage(null);
-    setProfileSuccessMessage(null);
-    setIsLoadingProfile(false);
-    setIsLoadingProfileStatus(false);
-    setIsSavingProfile(false);
-  }
 
   function resetActivationForm() {
     setActivationPublicId("");
@@ -640,53 +372,12 @@ function DashboardContent() {
     setResendVerificationStatus("idle");
     setResendVerificationMessage(null);
     resetActivationForm();
-    resetProfileEditor();
-  }
-
-  function updateProfileTextField(name: ProfileTextFieldName, value: string) {
-    setProfileForm((currentForm) => ({
-      ...currentForm,
-      [name]: value,
-    }));
-  }
-
-  function updateProfileDecisionField(name: ProfileDecisionFieldName, checked: boolean) {
-    setProfileForm((currentForm) => {
-      const nextForm = { ...currentForm, [name]: checked };
-
-      if (checked && name === "medical_conditions_none") {
-        nextForm.medical_conditions = "";
-      }
-
-      if (checked && name === "allergies_none") {
-        nextForm.allergies = "";
-      }
-
-      if (checked && name === "medications_none") {
-        nextForm.medications = "";
-      }
-
-      return nextForm;
-    });
-  }
-
-  function updateConsentAccepted(checked: boolean) {
-    setProfileForm((currentForm) => ({
-      ...currentForm,
-      is_public: checked ? currentForm.is_public : false,
-      public_consent_accepted_at: checked ? new Date().toISOString() : null,
-      public_consent_version: checked
-        ? profileStatus?.publication_eligibility.consent_version ?? currentForm.public_consent_version
-        : null,
-    }));
   }
 
   async function loadAuthenticatedDashboard(validatedUser: AuthUser) {
     setDeviceErrorMessage(null);
     setQrAdminMessage(null);
     resetAuthenticatedState();
-
-    void loadProfile();
 
     setIsLoadingDevices(true);
 
@@ -704,37 +395,6 @@ function DashboardContent() {
       setDeviceErrorMessage(getDevicesErrorMessage(error));
     } finally {
       setIsLoadingDevices(false);
-    }
-  }
-
-  async function loadProfile() {
-    setProfileErrorMessage(null);
-    setProfileSuccessMessage(null);
-    setIsLoadingProfile(true);
-    setIsLoadingProfileStatus(true);
-
-    try {
-      const [loadedProfile, loadedStatus] = await Promise.all([
-        getEmergencyProfile(),
-        getEmergencyProfileStatus(),
-      ]);
-
-      setProfileStatus(loadedStatus);
-
-      if (loadedProfile === null) {
-        setHasExistingProfile(false);
-        setProfileForm(createEmptyProfileForm());
-        return;
-      }
-
-      setProfile(loadedProfile);
-      setHasExistingProfile(true);
-      setProfileForm(createProfileForm(loadedProfile));
-    } catch (error) {
-      setProfileErrorMessage(getProfileErrorMessage(error, "No se pudo cargar el perfil de emergencia."));
-    } finally {
-      setIsLoadingProfile(false);
-      setIsLoadingProfileStatus(false);
     }
   }
 
@@ -1127,43 +787,6 @@ function DashboardContent() {
     }
   }
 
-  async function handleSaveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!currentUser) {
-      setProfileErrorMessage("Inicia sesión antes de guardar el perfil.");
-      return;
-    }
-
-    if (!isEmailVerified(currentUser)) {
-      setProfileErrorMessage(EMAIL_VERIFICATION_REQUIRED_MESSAGE);
-      return;
-    }
-
-    setProfileErrorMessage(null);
-    setProfileSuccessMessage(null);
-    setIsSavingProfile(true);
-
-    try {
-      const savedProfile = await updateEmergencyProfile(createProfilePayload(profileForm));
-      const status = await getEmergencyProfileStatus();
-      setProfile(savedProfile);
-      setProfileForm(createProfileForm(savedProfile));
-      setProfileStatus(status);
-      setHasExistingProfile(true);
-      setProfileSuccessMessage(
-        savedProfile.is_public && status.publication_eligibility.can_publish
-          ? "Perfil publicado. Los identificadores activos ya pueden mostrar tu ficha de emergencia."
-          : "Perfil de emergencia guardado correctamente.",
-      );
-      void loadPublicAccessStatuses(devices);
-    } catch (error) {
-      setProfileErrorMessage(getProfileErrorMessage(error, "No se pudo guardar el perfil de emergencia."));
-    } finally {
-      setIsSavingProfile(false);
-    }
-  }
-
   async function handleResendVerification() {
     setResendVerificationStatus("sending");
     setResendVerificationMessage(null);
@@ -1181,12 +804,6 @@ function DashboardContent() {
       setResendVerificationMessage(getResendVerificationErrorMessage(error));
     }
   }
-
-  const readinessCompletedCount = profileStatus
-    ? profileStatus.readiness.required_fields.length - profileStatus.readiness.missing_fields.length
-    : 0;
-  const readinessRequiredCount = profileStatus?.readiness.required_fields.length ?? 0;
-  const profileConsentAccepted = isConsentAccepted(profileForm, profileStatus);
 
   return (
     <>
@@ -1508,218 +1125,22 @@ function DashboardContent() {
         ) : null}
 
         {currentUser ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8" aria-labelledby="profile-editor-title">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">Editor de perfil</p>
-                <h2 className="mt-2 text-2xl font-bold tracking-tight" id="profile-editor-title">
-                  Mi perfil de emergencia
-                </h2>
-                <p className="mt-2 text-sm text-slate-600">
-                  Un único perfil de emergencia por cuenta. Se muestra en cualquiera de tus identificadores ProtegID activos que esté publicado.
-                </p>
-              </div>
-            </div>
-
-            {isLoadingProfile ? (
-              <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-                Cargando perfil de emergencia...
-              </p>
-            ) : null}
-
-            {!isLoadingProfile && hasExistingProfile === false ? (
-              <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Aún no has completado tu perfil de emergencia.
-              </p>
-            ) : null}
-
-            {profileErrorMessage ? (
-              <p className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
-                {profileErrorMessage}
-              </p>
-            ) : null}
-
-            {profileSuccessMessage ? (
-              <p className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-                {profileSuccessMessage}
-              </p>
-            ) : null}
-
-            {isSavingProfile ? (
-              <p className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-                Guardando perfil de emergencia...
-              </p>
-            ) : null}
-
-            <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5" aria-labelledby="profile-readiness-title">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">Preparacion del perfil</p>
-                  <h3 className="mt-2 text-xl font-bold tracking-tight" id="profile-readiness-title">
-                    Estado del perfil
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    El backend decide si el perfil puede publicarse. Esta tarjeta solo muestra el avance para completarlo.
-                  </p>
-                </div>
-                <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getProfilePublicationStateClass(profile, profileStatus)}`}>
-                  {isLoadingProfileStatus ? "Consultando perfil" : getProfilePublicationStateLabel(profile, profileStatus)}
-                </span>
-              </div>
-
-              {profileStatus ? (
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between gap-3 text-sm font-medium text-slate-700">
-                      <span>Campos obligatorios</span>
-                      <span>{readinessCompletedCount}/{readinessRequiredCount}</span>
-                    </div>
-                    <div className="mt-2 h-3 overflow-hidden rounded-full bg-white ring-1 ring-slate-200">
-                      <div
-                        className="h-full rounded-full bg-sky-600 transition-all"
-                        style={{ width: `${readinessRequiredCount > 0 ? (readinessCompletedCount / readinessRequiredCount) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {profileStatus.publication_eligibility.can_publish && profile?.is_public ? (
-                    <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-                      Perfil publico: tus identificadores activos pueden mostrar tu ficha de emergencia.
-                    </p>
-                  ) : null}
-
-                  {profileStatus.readiness.missing_fields.length > 0 ? (
-                    <div className="rounded-2xl border border-amber-200 bg-white p-4">
-                      <h4 className="text-sm font-semibold text-amber-950">Campos faltantes</h4>
-                      <ul className="mt-3 space-y-2 text-sm text-amber-900">
-                        {profileStatus.readiness.missing_fields.map((field) => (
-                          <li key={field}>{getReadinessFieldLabel(field)}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {profileStatus.readiness.is_ready && !profileStatus.publication_eligibility.consent_valid ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <h4 className="text-sm font-semibold text-slate-950">Pendiente</h4>
-                      <p className="mt-2 text-sm text-slate-700">
-                        Falta aceptar el consentimiento de publicación vigente (versión {profileStatus.publication_eligibility.consent_version}).
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <p className="mt-4 rounded-2xl border border-sky-100 bg-white px-4 py-3 text-sm text-sky-800">
-                  {isLoadingProfileStatus ? "Consultando estado del perfil..." : "No se pudo consultar el estado del perfil."}
-                </p>
-              )}
-            </section>
-
-            {!currentUserEmailVerified ? (
-              <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">
-                Debes verificar tu correo antes de realizar esta acción.
-              </p>
-            ) : null}
-
-            <form className="mt-6 space-y-5" onSubmit={handleSaveProfile}>
-              {PROFILE_FIELD_GROUPS.map((group) => (
-                <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5" key={group.title}>
-                  <h3 className="text-base font-semibold text-slate-950">{group.title}</h3>
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    {group.fields.map((field) => (
-                      <div className={field.multiline ? "md:col-span-2" : undefined} key={field.name}>
-                        <label className="text-sm font-medium text-slate-700" htmlFor={`profile-${field.name}`}>
-                          {field.label}
-                        </label>
-                        {field.multiline ? (
-                          <textarea
-                            className="mt-2 min-h-28 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified || (field.noneField ? profileForm[field.noneField] : false)}
-                            id={`profile-${field.name}`}
-                            onChange={(event) => updateProfileTextField(field.name, event.target.value)}
-                            value={profileForm[field.name]}
-                          />
-                        ) : (
-                          <input
-                            className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
-                            disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified || (field.noneField ? profileForm[field.noneField] : false)}
-                            id={`profile-${field.name}`}
-                            onChange={(event) => updateProfileTextField(field.name, event.target.value)}
-                            type="text"
-                            value={profileForm[field.name]}
-                          />
-                        )}
-                        {field.noneField && field.noneLabel ? (
-                          <label className="mt-3 flex gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                            <input
-                              checked={profileForm[field.noneField]}
-                              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
-                              disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified}
-                              onChange={(event) => updateProfileDecisionField(field.noneField as ProfileDecisionFieldName, event.target.checked)}
-                              type="checkbox"
-                            />
-                            <span>{field.noneLabel}</span>
-                          </label>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              ))}
-
-              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
-                <h3 className="text-base font-semibold text-slate-950">Consentimiento y visibilidad publica</h3>
-                <label className="mt-4 flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                  <input
-                    checked={profileConsentAccepted}
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
-                    disabled={isLoadingProfile || isSavingProfile || !profileStatus || !currentUserEmailVerified}
-                    onChange={(event) => updateConsentAccepted(event.target.checked)}
-                    type="checkbox"
-                  />
-                  <span>
-                    <span className="block font-semibold text-slate-950">Acepto la publicacion de mi ficha de emergencia</span>
-                    <span className="mt-1 block text-slate-600">
-                      Acepto que ProtegID muestre publicamente mi informacion de emergencia al escanear el QR/NFC de cualquiera de mis identificadores fisicos activos.
-                    </span>
-                    {profileStatus ? (
-                      <span className="mt-2 block text-xs text-slate-500">Version de consentimiento: {profileStatus.publication_eligibility.consent_version}</span>
-                    ) : null}
-                  </span>
-                </label>
-
-                <label className="mt-4 flex gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                  <input
-                    checked={profileForm.is_public}
-                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700"
-                    disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified}
-                    onChange={(event) =>
-                      setProfileForm((currentForm) => ({
-                        ...currentForm,
-                        is_public: event.target.checked,
-                      }))
-                    }
-                    type="checkbox"
-                  />
-                  <span>
-                    <span className="block font-semibold text-slate-950">Habilitar perfil publico</span>
-                    <span className="mt-1 block text-slate-600">
-                      Controla si tu perfil se muestra en tus identificadores ProtegID activos. El backend solo lo publicara si cumple los minimos y el consentimiento vigente.
-                    </span>
-                    {profileStatus && !profileStatus.publication_eligibility.can_publish ? (
-                      <span className="mt-2 block text-xs font-medium text-amber-700">
-                        El perfil aun no esta listo para publicarse. Puedes guardar avances sin habilitarlo.
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
-              </section>
-
-              <Button className="w-full sm:w-auto" disabled={isLoadingProfile || isSavingProfile || !currentUserEmailVerified} type="submit">
-                {isSavingProfile ? "Guardando..." : "Guardar perfil"}
+          <Card aria-labelledby="profile-access-title">
+            <CardHeader>
+              <CardDescription className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                Editor de perfil
+              </CardDescription>
+              <CardTitle id="profile-access-title">Perfil de emergencia</CardTitle>
+              <CardDescription>
+                Gestiona los datos médicos y de contacto que se muestran en tus identificadores ProtegID activos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link href="/dashboard/perfil">Gestionar perfil</Link>
               </Button>
-            </form>
-          </section>
+            </CardContent>
+          </Card>
         ) : null}
     </>
   );
