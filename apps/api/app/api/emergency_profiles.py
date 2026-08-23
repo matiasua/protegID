@@ -6,9 +6,10 @@ actual): /api/devices/{device_id}/emergency-profile[...] — ver
 app.services.emergency_profiles para el detalle de los adapters.
 """
 
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import CurrentUserDep, SessionDep, VerifiedEmailDep
@@ -40,6 +41,45 @@ from app.services.emergency_profiles import (
 from app.services.protected_persons import ProtectedPersonSoftDeletedError
 
 router = APIRouter(tags=["emergency-profiles"])
+
+logger = logging.getLogger("protegid-api.emergency_profiles")
+
+# RFC 9745: Deprecation es un Structured Field cuyo valor debe ser una Date
+# (`@<unix-timestamp>`), no el booleano `true`. Fecha en la que se declaró
+# formalmente la deprecación de este contrato legacy (Bloque 8.1,
+# 2026-08-22T00:00:00Z). Timestamp fijo, no dinámico: no debe recalcularse
+# por request ni con datetime.now().
+LEGACY_EMERGENCY_PROFILE_DEPRECATION = "@1787356800"
+
+
+def mark_legacy_endpoint_use(
+    response: Response, *, method: str, route: str, handler: str
+) -> None:
+    """Bloque 8.1: marca una respuesta de un endpoint device-scoped legacy de
+    EmergencyProfile como deprecated (header + log), sin alterar body,
+    status code ni autorización. No loguea PII ni contenido médico.
+
+    Se debe invocar únicamente DESPUÉS de que el request superó ownership
+    (ver `_get_owned_device`): "used" debe significar que un consumidor
+    autorizado realmente llegó al contrato legacy, no cualquier intento.
+
+    Decisión sobre `Link: rel="successor-version"` (RFC 8594): se omite
+    deliberadamente. Esta API no está versionada (no hay /v2) y el
+    successor semántico no es un mapeo 1:1 limpio: GET/PUT
+    .../emergency-profile equivalen a /api/emergency-profile, pero
+    .../emergency-profile/readiness combina ProfileReadiness +
+    PublicationEligibility + PublicAccessStatus (específico de un device),
+    mientras que /api/emergency-profile/status sólo expone readiness +
+    publication_eligibility (sin PublicAccessStatus por device). Forzar el
+    Link ahí sería impreciso. Se revisará si en el futuro se introduce un
+    endpoint account-scoped que sí cubra ese dominio completo.
+
+    Tampoco se agrega `Sunset` todavía: no hay fecha real de retiro."""
+    response.headers["Deprecation"] = LEGACY_EMERGENCY_PROFILE_DEPRECATION
+    logger.warning(
+        "legacy_emergency_profile_endpoint_used",
+        extra={"http_method": method, "route": route, "handler": handler},
+    )
 
 
 def _get_owned_device(
@@ -165,13 +205,21 @@ def get_account_emergency_profile_status(
 @router.get(
     "/api/devices/{device_id}/emergency-profile",
     response_model=EmergencyProfileRead,
+    deprecated=True,
 )
 def get_device_emergency_profile(
     device_id: UUID,
     session: SessionDep,
     current_user: CurrentUserDep,
+    response: Response,
 ):
     device = _get_owned_device(session, current_user, device_id)
+    mark_legacy_endpoint_use(
+        response,
+        method="GET",
+        route="/api/devices/{device_id}/emergency-profile",
+        handler="get_device_emergency_profile",
+    )
     try:
         profile = get_legacy_device_profile(session, device)
     except CanonicalProfileDivergenceError as error:
@@ -192,13 +240,21 @@ def get_device_emergency_profile(
 @router.get(
     "/api/devices/{device_id}/emergency-profile/readiness",
     response_model=EmergencyProfileReadinessRead,
+    deprecated=True,
 )
 def get_device_emergency_profile_readiness(
     device_id: UUID,
     session: SessionDep,
     current_user: CurrentUserDep,
+    response: Response,
 ):
     device = _get_owned_device(session, current_user, device_id)
+    mark_legacy_endpoint_use(
+        response,
+        method="GET",
+        route="/api/devices/{device_id}/emergency-profile/readiness",
+        handler="get_device_emergency_profile_readiness",
+    )
     try:
         return get_legacy_readiness_for_device(session, device, current_user)
     except CanonicalProfileDivergenceError as error:
@@ -211,14 +267,22 @@ def get_device_emergency_profile_readiness(
 @router.put(
     "/api/devices/{device_id}/emergency-profile",
     response_model=EmergencyProfileRead,
+    deprecated=True,
 )
 def put_device_emergency_profile(
     device_id: UUID,
     payload: EmergencyProfileUpdate,
     session: SessionDep,
     current_user: VerifiedEmailDep,
+    response: Response,
 ):
     device = _get_owned_device(session, current_user, device_id)
+    mark_legacy_endpoint_use(
+        response,
+        method="PUT",
+        route="/api/devices/{device_id}/emergency-profile",
+        handler="put_device_emergency_profile",
+    )
     try:
         profile = put_legacy_device_profile(session, device, current_user, payload)
     except (EmergencyProfilePublicationError, ProfileConsistencyError) as error:
