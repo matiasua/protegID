@@ -8,9 +8,8 @@ Estos tres dominios se mantienen deliberadamente separados:
 
 Bloque 4: estas tres funciones son ahora la fuente de verdad productiva
 (account-scoped profile, adapters device-scoped legacy, resolución publica y
-public-access-status privado). app/services/profile_readiness.py (el motor
-legacy que mezclaba Device+EmergencyProfile) ya no tiene callers productivos:
-queda solo por si algun caller externo no migrado todavia depende de el.
+public-access-status privado). El motor legacy que mezclaba Device+EmergencyProfile
+(app/services/profile_readiness.py) fue eliminado en Bloque 8.5.
 """
 
 from app.core.settings import get_settings

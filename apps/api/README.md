@@ -210,18 +210,20 @@ Validacion esperada:
 
 El backend incluye modelo `EmergencyProfile`, tabla `emergency_profiles` y relacion unica `emergency_profiles.device_id -> devices.id`.
 
-Endpoints privados:
+Endpoints privados (Sprint 17, device-scoped): `GET/PUT /api/devices/{device_id}/emergency-profile`
+y `GET /api/devices/{device_id}/emergency-profile/readiness` fueron retirados por completo en
+Bloque 8.3. El contrato productivo vigente es account-scoped: `GET/PUT /api/emergency-profile`
+y `GET /api/emergency-profile/status` (ver `apps/api/app/api/emergency_profiles.py`).
 
-- `GET /api/devices/{device_id}/emergency-profile`: requiere cookie de sesion, valida que el device pertenezca al usuario autenticado y devuelve el perfil completo.
-- `PUT /api/devices/{device_id}/emergency-profile`: requiere cookie de sesion y CSRF, valida que el device pertenezca al usuario autenticado y crea o actualiza el perfil.
-- `GET /api/devices/{device_id}/emergency-profile/readiness`: requiere cookie de sesion, valida ownership y devuelve readiness sin valores medicos.
-
-Profile readiness Sprint 17:
+Profile readiness Sprint 17 (historico):
 
 - Identificador vinculado no significa ProtegID operativo.
 - ProtegID queda operativo solo si el perfil cumple datos minimos, consentimiento vigente y `is_public=true`.
-- Servicio: `calculate_profile_readiness(device, profile)`.
-- Schema: `EmergencyProfileReadinessRead`.
+- Servicio vigente: `apps/api/app/services/emergency_profile_status.py`, que separa
+  `ProfileReadiness` (solo `EmergencyProfile`), `PublicationEligibility` (agrega consentimiento) y
+  `PublicAccessStatus` (agrega Device + ProtectedPerson). El motor legacy
+  `calculate_profile_readiness(device, profile)` y su schema `EmergencyProfileReadinessRead`
+  fueron eliminados en Bloque 8.5.
 - Nuevos campos: `medical_conditions_none`, `allergies_none`, `medications_none`, `public_consent_accepted_at`, `public_consent_version`.
 - `is_public` tiene default `false` para nuevos perfiles.
 - `PUBLIC_PROFILE_CONSENT_VERSION` define la version vigente de consentimiento.

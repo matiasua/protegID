@@ -1,5 +1,6 @@
-"""Bloque 2: nuevo motor de estados (ProfileReadiness, PublicationEligibility,
-PublicAccessStatus), en paralelo al legacy `profile_readiness.py`.
+"""Motor de estados vigente: ProfileReadiness, PublicationEligibility,
+PublicAccessStatus. El motor legacy `profile_readiness.py` fue retirado en
+Bloque 8.5.
 
 Funciones puras, sin DB: los modelos se construyen en memoria (nunca
 persistidos) para representar fielmente los objetos de dominio reales, sin
