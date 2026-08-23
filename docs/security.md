@@ -263,18 +263,25 @@ Limites de seguridad actuales:
 
 ## Public Profile Foundation
 
-Sprint 4 implementa la base de perfiles publicos de emergencia:
+Base de perfiles publicos de emergencia. Arquitectura vigente (CONTRACT,
+Bloque 8.3): la edicion del perfil es account-scoped, no device-scoped.
+`EmergencyProfile` pertenece a `ProtectedPerson`, no a `Device`:
+
+```
+User/Account -> ProtectedPerson -> EmergencyProfile
+Device -> ProtectedPerson
+```
 
 - Modelo `EmergencyProfile`.
 - Tabla `emergency_profiles`.
-- Relacion unica y obligatoria `emergency_profiles.device_id -> devices.id`.
-- Endpoints privados `GET /api/devices/{device_id}/emergency-profile` y `PUT /api/devices/{device_id}/emergency-profile`.
+- `emergency_profiles.device_id -> devices.id` sigue existiendo en el modelo (columna nullable, compatibilidad historica; su DROP pertenece a un bloque CONTRACT posterior), pero ya NO es la relacion de ownership: la fuente de verdad es `emergency_profiles.protected_person_id -> protected_persons.id`.
+- Endpoints privados de edicion (account-scoped): `GET /api/emergency-profile` y `PUT /api/emergency-profile`. Los endpoints device-scoped equivalentes (`GET`/`PUT /api/devices/{device_id}/emergency-profile`) existieron como contrato legacy y fueron retirados en Bloque 8.3; ya no existen en el router (404 por ausencia de ruta).
 - Endpoint publico `GET /api/public/profiles/{public_id}`.
 
 Controles de seguridad y privacidad:
 
-- Los endpoints privados requieren cookie de sesion.
-- Los endpoints privados validan ownership mediante `current_user.id` y `device.user_id`.
+- Los endpoints privados de edicion requieren cookie de sesion y validan ownership mediante `current_user.id` contra la cuenta autenticada (NO mediante `device.user_id`: editar el perfil ya no depende de poseer un Device concreto).
+- `GET /api/devices/{device_id}/public-access-status` es el unico endpoint de EmergencyProfile que sigue siendo device-scoped y ownership-protegido via `device.user_id`; expone solo si ESE device concreto esta operativo (no permite leer ni editar el perfil).
 - El endpoint publico no requiere autenticacion.
 - El endpoint publico busca por `Device.public_id`.
 - El endpoint publico solo responde si `readiness.is_public_operational == true`.
@@ -292,8 +299,8 @@ Controles de seguridad y privacidad:
 Readiness y consentimiento:
 
 - Identificador vinculado no significa ProtegID operativo.
-- `calculate_profile_readiness(device, profile)` es la fuente backend para determinar readiness.
-- `GET /api/devices/{device_id}/emergency-profile/readiness` requiere cookie de sesion, verifica ownership y no expone valores medicos.
+- `apps/api/app/services/emergency_profile_status.py` (`ProfileReadiness` + `PublicationEligibility`) es la fuente backend vigente para determinar readiness y elegibilidad de publicacion; `profile_readiness.py` (motor legacy `calculate_profile_readiness(device, profile)`) ya no tiene callers productivos.
+- `GET /api/emergency-profile/status` requiere cookie de sesion y no expone valores medicos.
 - Campos minimos: `display_name`, contacto de emergencia completo, decision explicita para condiciones medicas/alergias/medicamentos, consentimiento aceptado, version vigente e `is_public=true`.
 - El consentimiento es explicito, versionado con `PUBLIC_PROFILE_CONSENT_VERSION` y no se infiere desde `is_public`.
 - `is_public` tiene default `false` para nuevos perfiles.
@@ -393,8 +400,8 @@ Flujo actual:
 - Valida sesion contra `GET /api/auth/me`.
 - Carga dispositivos con `GET /api/devices`.
 - Permite activar/asociar un identificador fisico desde `Activar identificador` con `POST /api/devices/activate`.
-- Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
-- Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- Carga perfil privado de la cuenta con `GET /api/emergency-profile` (account-scoped).
+- Crea o actualiza perfil con `PUT /api/emergency-profile`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
 - Si la sesion expiro o es invalida, muestra error controlado y permite volver a login.
 - La organizacion visual de `/dashboard` separa estado de sesion, activacion de identificador, dispositivos y editor de perfil.

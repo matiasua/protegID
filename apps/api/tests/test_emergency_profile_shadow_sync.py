@@ -78,19 +78,25 @@ def test_put_account_profile_keeps_two_equivalent_active_profiles_in_sync(
         session.close()
 
 
-# --- B: PUT via legacy adapter Device B, canonical y shadow quedan sincronizados ---
+# --- B: PUT via account, con dos devices activados, canonical y shadow quedan sincronizados ---
 
 
-def test_put_via_legacy_device_b_syncs_canonical_and_shadow(
+def test_put_account_profile_syncs_canonical_and_shadow_with_devices_activated(
     client: TestClient, make_authed_user, session_factory: sessionmaker
 ) -> None:
+    """Bloque 8.3: el trigger original de este test era el adapter legacy
+    PUT /api/devices/{device_id}/emergency-profile (retirado). Ese adapter
+    delegaba en put_account_profile sin lógica propia, así que el mismo
+    caso (dos devices activados, dos perfiles activos equivalentes) se
+    preserva disparando la escritura por el único write path que queda:
+    el endpoint account-scoped."""
     authed = make_authed_user()
     session = session_factory()
     device_a, claim_a = create_pending_device_with_claim_code(session)
     device_b, claim_b = create_pending_device_with_claim_code(session)
     session.close()
 
-    activated_a = _activate(client, authed, device_a, claim_a)
+    _activate(client, authed, device_a, claim_a)
     _activate(client, authed, device_b, claim_b)
 
     session = session_factory()
@@ -100,7 +106,7 @@ def test_put_via_legacy_device_b_syncs_canonical_and_shadow(
     session.close()
 
     response = client.put(
-        f"/api/devices/{activated_a['id']}/emergency-profile",
+        "/api/emergency-profile",
         json=ready_profile_payload(display_name="Set via device B path"),
         cookies=authed.cookies,
         headers=authed.headers,

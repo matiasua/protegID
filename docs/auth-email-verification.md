@@ -29,7 +29,7 @@ Usuarios autenticados pero no verificados no pueden:
 
 - Activar un identificador fisico con `POST /api/devices/activate`.
 - Crear devices admin con `POST /api/admin/devices`.
-- Editar perfil de emergencia con `PUT /api/devices/{device_id}/emergency-profile`.
+- Editar perfil de emergencia con `PUT /api/emergency-profile`.
 - Publicar perfil de emergencia.
 - Generar u operar endpoints admin de devices/QR.
 - Ejecutar otras mutaciones criticas que usen la dependencia de email verificado.
@@ -55,7 +55,7 @@ Endpoints que siguen protegidos por CSRF:
 - `POST /api/auth/resend-verification`: requiere sesion y CSRF.
 - `POST /api/auth/logout`: requiere CSRF cuando hay sesion.
 - `POST /api/devices/activate`: requiere sesion, email verificado y CSRF.
-- `PUT /api/devices/{device_id}/emergency-profile`: requiere sesion, email verificado y CSRF.
+- `PUT /api/emergency-profile`: requiere sesion, email verificado y CSRF.
 - `POST /api/admin/devices/{device_id}/qr`: requiere sesion, rol admin, email verificado y CSRF.
 
 ## Rate Limiting

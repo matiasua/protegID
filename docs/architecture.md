@@ -161,24 +161,33 @@ Para devices `active`, `disabled`, `lost` o inexistentes responde `404` generico
 
 ## Public Profile Foundation
 
-El backend incluye la base de perfiles publicos de emergencia de Sprint 4:
+El backend incluye la base de perfiles publicos de emergencia. Arquitectura
+vigente (CONTRACT, Bloque 8.3): `EmergencyProfile` pertenece a
+`ProtectedPerson`, no a `Device`. `Device` no es dueno del perfil.
+
+```
+User/Account -> ProtectedPerson -> EmergencyProfile
+Device -> ProtectedPerson
+```
 
 - Modelo SQLAlchemy `EmergencyProfile`.
 - Tabla `emergency_profiles` gestionada por Alembic.
-- Relacion unica y obligatoria `emergency_profiles.device_id -> devices.id`.
-- Un perfil de emergencia queda asociado a un unico device.
-- Los endpoints privados requieren cookie de sesion y validan ownership con `current_user.id == device.user_id`.
+- `emergency_profiles.device_id -> devices.id` sigue existiendo en el modelo (columna nullable, compatibilidad historica; su DROP pertenece a un bloque CONTRACT posterior), pero ya NO es la relacion de ownership productiva: la fuente de verdad es `emergency_profiles.protected_person_id -> protected_persons.id`.
+- Los endpoints privados de edicion (account-scoped) requieren cookie de sesion y validan ownership con `current_user.id` contra la cuenta autenticada, no contra un `device.user_id`.
 
-Endpoints privados de perfiles de emergencia:
+Endpoints privados de perfiles de emergencia (account-scoped; los endpoints device-scoped equivalentes existieron como contrato legacy y fueron retirados en Bloque 8.3):
 
-- `GET /api/devices/{device_id}/emergency-profile`
-- `PUT /api/devices/{device_id}/emergency-profile`
+- `GET /api/emergency-profile`
+- `PUT /api/emergency-profile`
+- `GET /api/emergency-profile/status`
+
+`GET /api/devices/{device_id}/public-access-status` es el unico endpoint de EmergencyProfile que sigue siendo device-scoped y ownership-protegido; combina Device + ProtectedPerson + EmergencyProfile para responder si ESE device concreto esta operativo, sin exponer el perfil.
 
 Endpoint publico de perfil de emergencia:
 
 - `GET /api/public/profiles/{public_id}`
 
-El endpoint publico no requiere autenticacion. Busca por `Device.public_id`, pero desde Sprint 17 solo responde si `calculate_profile_readiness(device, profile)` indica `is_public_operational == true`. La respuesta publica no expone `id`, `device_id`, `user_id`, `is_public`, flags `*_none`, consentimiento, `created_at`, `updated_at` ni `deleted_at`.
+Resolucion publica (CONTRACT): `public_id -> Device -> Device.protected_person_id -> ProtectedPerson -> EmergencyProfile activo`. El endpoint publico no requiere autenticacion. Busca por `Device.public_id`, pero solo responde si `calculate_public_access_status(device, protected_person, profile)` indica `is_operational == true`. La respuesta publica no expone `id`, `device_id`, `user_id`, `is_public`, flags `*_none`, consentimiento, `created_at`, `updated_at` ni `deleted_at`.
 
 Sprint 17 separa identificador vinculado de ProtegID operativo:
 
@@ -192,11 +201,11 @@ Sprint 17 separa identificador vinculado de ProtegID operativo:
 
 Readiness backend:
 
-- Servicio puro: `calculate_profile_readiness(device, profile)`.
-- Schema: `EmergencyProfileReadinessRead`.
-- Endpoint privado: `GET /api/devices/{device_id}/emergency-profile/readiness`.
-- Requiere cookie de sesion, verifica ownership y no expone valores medicos, `user_id` ni `device_id`.
-- El backend bloquea `is_public=true` si `readiness.can_publish != true` y responde `422 Emergency profile is not ready for publication.`.
+- Servicio: `apps/api/app/services/emergency_profile_status.py`, que separa `ProfileReadiness` (solo perfil), `PublicationEligibility` (agrega consentimiento) y `PublicAccessStatus` (agrega Device + ProtectedPerson, especifico de un device). `profile_readiness.py` (motor legacy `calculate_profile_readiness(device, profile)`) ya no tiene callers productivos.
+- Schema: `EmergencyProfileStatusRead`.
+- Endpoint privado: `GET /api/emergency-profile/status`.
+- Requiere cookie de sesion y no expone valores medicos ni `user_id`.
+- El backend bloquea `is_public=true` si `publication_eligibility.can_publish != true` y responde `422 Emergency profile is not ready for publication.`.
 - El endpoint publico devuelve `404` generico ante inexistente, no activo, eliminado, incompleto, sin consentimiento vigente o `is_public=false`.
 
 ## QR Foundation
@@ -297,8 +306,8 @@ El frontend privado inicial existe en Next.js App Router.
 - No mantiene fallback de token manual.
 - Tiene boton `Cerrar sesion` que llama `POST /api/auth/logout` con CSRF.
 - Permite seleccionar un dispositivo.
-- Carga el perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
-- Crea o actualiza el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- Carga el perfil privado de la cuenta con `GET /api/emergency-profile` (account-scoped, no depende del device seleccionado).
+- Crea o actualiza el perfil con `PUT /api/emergency-profile`.
 - Consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
 - Permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
 

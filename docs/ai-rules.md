@@ -59,9 +59,19 @@ Public Profile Foundation ya existe e incluye modelo `EmergencyProfile`, tabla `
 
 Profile Readiness & Public Profile Completion ya existe. Identificador vinculado no significa ProtegID operativo. El identificador queda vinculado con `public_id + claim_code`; ProtegID queda operativo solo si el perfil cumple datos minimos, consentimiento vigente e `is_public=true`. Campos minimos: `display_name`, `emergency_contact_name`, `emergency_contact_relationship`, `emergency_contact_phone`, decision explicita para condiciones medicas/alergias/medicamentos, `public_consent_accepted_at`, `public_consent_version` vigente e `is_public=true`. Campos nuevos: `medical_conditions_none`, `allergies_none`, `medications_none`, `public_consent_accepted_at`, `public_consent_version`; `is_public` default `false` para nuevos perfiles.
 
-El consentimiento publico es explicito, usa `PUBLIC_PROFILE_CONSENT_VERSION`, no se infiere desde `is_public` y no se expone publicamente. La fuente de verdad productiva para readiness/publicacion/acceso publico es `apps/api/app/services/emergency_profile_status.py`, que separa tres dominios: `ProfileReadiness` (solo `EmergencyProfile`), `PublicationEligibility` (agrega consentimiento) y `PublicAccessStatus` (agrega Device + ProtectedPerson, especifico de un device/public_id). `apps/api/app/services/profile_readiness.py` (motor legacy `calculate_profile_readiness(device, profile)` que mezclaba Device+EmergencyProfile) ya no tiene callers productivos; se mantiene solo por compatibilidad con posibles consumidores externos no migrados. `GET /api/devices/{device_id}/emergency-profile/readiness` (DEPRECATED, ver parrafo siguiente) y el schema `EmergencyProfileReadinessRead` requieren autenticacion, verifican ownership y no exponen valores medicos, `user_id` ni `device_id`.
+El consentimiento publico es explicito, usa `PUBLIC_PROFILE_CONSENT_VERSION`, no se infiere desde `is_public` y no se expone publicamente. La fuente de verdad productiva para readiness/publicacion/acceso publico es `apps/api/app/services/emergency_profile_status.py`, que separa tres dominios: `ProfileReadiness` (solo `EmergencyProfile`), `PublicationEligibility` (agrega consentimiento) y `PublicAccessStatus` (agrega Device + ProtectedPerson, especifico de un device/public_id). `apps/api/app/services/profile_readiness.py` (motor legacy `calculate_profile_readiness(device, profile)` que mezclaba Device+EmergencyProfile) ya no tiene callers productivos; se mantiene solo porque su eliminacion pertenece a Bloque 8.5, no a este retiro de API.
 
-Bloque 8.1 (deprecation legacy): los tres endpoints device-scoped `GET /api/devices/{device_id}/emergency-profile`, `PUT /api/devices/{device_id}/emergency-profile` y `GET /api/devices/{device_id}/emergency-profile/readiness` estan marcados `deprecated=True` en OpenAPI y responden header `Deprecation: true`, pero siguen 100% funcionales (deprecated != removed: no hay evidencia suficiente para descartar consumidores externos). Los equivalentes account-scoped vigentes son `GET /api/emergency-profile`, `PUT /api/emergency-profile` y `GET /api/emergency-profile/status`. `GET /api/devices/{device_id}/public-access-status` NO es legacy: es contrato productivo actual, no esta deprecated y sigue siendo consumido por el frontend.
+EmergencyProfile API productiva (CONTRACT, vigente desde Bloque 8.3):
+
+- `GET /api/emergency-profile`
+- `PUT /api/emergency-profile`
+- `GET /api/emergency-profile/status`
+
+Device PublicAccessStatus (productivo, device-scoped, no forma parte del retiro):
+
+- `GET /api/devices/{device_id}/public-access-status`
+
+Los antiguos endpoints EmergencyProfile device-scoped — `GET /api/devices/{device_id}/emergency-profile`, `PUT /api/devices/{device_id}/emergency-profile` y `GET /api/devices/{device_id}/emergency-profile/readiness` — fueron marcados `deprecated=True` en Bloque 8.1 y retirados por completo en Bloque 8.3 (dejaron de existir en el router; ya no aparecen en OpenAPI y responden `404` por ausencia de ruta, no por logica de negocio). Bloque 8.2 confirmo, con evidencia operacional externa al repo, que ese contrato nunca fue desplegado a produccion/staging ni tuvo consumidores externos al frontend, que ya usaba unicamente el contrato account-scoped; por eso el retiro se aprobo sin ventana de observacion ni fase `410 Gone`. `EmergencyProfileReadinessRead` sigue existiendo como schema (usado por `profile_readiness.py`, Bloque 8.5), pero ya no tiene un endpoint HTTP que lo sirva.
 
 El backend bloquea `is_public=true` si el perfil no cumple readiness y responde `422 Emergency profile is not ready for publication.`. `GET /api/public/profiles/{public_id}` solo devuelve datos si `readiness.is_public_operational == true`; si no, responde `404` generico sin revelar si falta perfil, consentimiento, readiness o publicacion. No exponer `medical_conditions_none`, `allergies_none`, `medications_none`, `public_consent_accepted_at`, `public_consent_version`, `is_public`, `user_id` ni `device_id` en el schema publico.
 
@@ -77,7 +87,7 @@ Sprint 9 agrega UX Hardening & Navigation. `/` funciona como landing inicial del
 
 Auth Frontend productivo ya existe. `/login` permite ingresar email y password, consume `POST /api/auth/login`, recibe cookies HttpOnly/CSRF y redirige automaticamente con `router.replace()` a un `returnTo` sanitizado o `/dashboard`. No recibe, guarda ni muestra tokens. No usa `sessionStorage`, `localStorage`, `Authorization Bearer` ni token manual.
 
-Private Profile Management Frontend ya existe en `/dashboard`. Valida sesion con `GET /api/auth/me` usando cookie, carga dispositivos con `GET /api/devices`, permite activar/asociar un identificador fisico desde `Activar identificador` con `public_id + claim_code`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`, consulta readiness con `GET /api/devices/{device_id}/emergency-profile/readiness` y crea/actualiza con `PUT /api/devices/{device_id}/emergency-profile`. Si no hay sesion muestra estado no autenticado y boton/link `Ir a login`. El boton `Cerrar sesion` llama `POST /api/auth/logout` con CSRF.
+Private Profile Management Frontend ya existe en `/dashboard`. Valida sesion con `GET /api/auth/me` usando cookie, carga dispositivos con `GET /api/devices`, permite activar/asociar un identificador fisico desde `Activar identificador` con `public_id + claim_code`, permite seleccionar un dispositivo, carga perfil privado con `GET /api/emergency-profile`, consulta status con `GET /api/emergency-profile/status` y crea/actualiza con `PUT /api/emergency-profile` (contrato account-scoped; los endpoints device-scoped equivalentes fueron retirados en Bloque 8.3). Si no hay sesion muestra estado no autenticado y boton/link `Ir a login`. El boton `Cerrar sesion` llama `POST /api/auth/logout` con CSRF.
 
 La sesion frontend actual es productiva para lanzamiento controlado. Usa cookie HttpOnly de sesion, cookie CSRF legible por JS y `credentials: "include"`. No guardar tokens en `sessionStorage` ni `localStorage`. No enviar `Authorization Bearer` desde frontend.
 
@@ -140,10 +150,13 @@ Endpoints de devices existentes:
 
 Endpoints de perfiles de emergencia existentes:
 
-- `GET /api/devices/{device_id}/emergency-profile`
-- `PUT /api/devices/{device_id}/emergency-profile`
-- `GET /api/devices/{device_id}/emergency-profile/readiness`
+- `GET /api/emergency-profile`
+- `PUT /api/emergency-profile`
+- `GET /api/emergency-profile/status`
+- `GET /api/devices/{device_id}/public-access-status`
 - `GET /api/public/profiles/{public_id}`
+
+Los endpoints device-scoped `GET/PUT /api/devices/{device_id}/emergency-profile` y `GET /api/devices/{device_id}/emergency-profile/readiness` existieron como contrato legacy y fueron retirados en Bloque 8.3 (CONTRACT).
 
 Endpoints admin de QR existentes:
 

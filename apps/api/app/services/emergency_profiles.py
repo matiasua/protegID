@@ -1,14 +1,13 @@
 """Servicio de perfiles de emergencia — Bloque 4: switch a ProtectedPerson.
 
-La fuente de verdad canónica es ahora:
+La fuente de verdad canónica es:
     User -> ProtectedPerson -> EmergencyProfile canónico (get_canonical_emergency_profile)
 
-Las funciones *_legacy_device_* siguen existiendo para no romper el frontend
-actual (device-scoped), pero son ADAPTERS: resuelven el ProtectedPerson del
-usuario dueño del Device y delegan en las mismas funciones account-scoped, en
-vez de resolver EmergencyProfile.device_id == device.id como fuente. Así,
-Device A y Device B de un mismo usuario ya no pueden producir fichas
-distintas. Ver docs de Bloque 4 para el detalle del switch.
+Los adapters *_legacy_device_* que soportaban el contrato HTTP device-scoped
+fueron retirados en Bloque 8.3 (ver app.api.emergency_profiles). Este módulo
+sigue exponiendo el contrato account-scoped y los helpers device-scoped que
+permanecen productivos (get_public_access_status_for_device,
+get_public_profile_by_public_id).
 """
 
 import logging
@@ -22,7 +21,6 @@ from app.repositories.protected_persons import get_by_id as get_protected_person
 from app.schemas.emergency_profile import (
     EmergencyProfileCreate,
     EmergencyProfilePublicRead,
-    EmergencyProfileReadinessRead,
     EmergencyProfileUpdate,
     MEDICAL_DECISION_FIELD_PAIRS,
     PublicAccessStatusRead,
@@ -33,7 +31,6 @@ from app.services.emergency_profile_canonical import (
     get_canonical_emergency_profile,
 )
 from app.services.emergency_profile_status import (
-    calculate_profile_readiness,
     calculate_publication_eligibility,
     calculate_public_access_status,
 )
@@ -249,71 +246,6 @@ def get_account_profile_status(
         return None, True
 
     return get_canonical_emergency_profile(session, protected_person), False
-
-
-def get_legacy_device_profile(session: Session, device: Device) -> EmergencyProfile | None:
-    """DEPRECATED adapter para GET /api/devices/{device_id}/emergency-profile.
-
-    Ya NO resuelve EmergencyProfile.device_id == device.id como fuente. En
-    cambio: Device -> Device.protected_person_id -> ProtectedPerson ->
-    perfil canónico. Esto es lo que garantiza que dos Devices del mismo
-    usuario devuelvan siempre la misma ficha."""
-    if device.protected_person_id is None:
-        return None
-
-    protected_person = get_protected_person_by_id(session, device.protected_person_id)
-    if protected_person is None or protected_person.deleted_at is not None:
-        return None
-
-    return get_canonical_emergency_profile(session, protected_person)
-
-
-def put_legacy_device_profile(
-    session: Session,
-    device: Device,
-    user: User,
-    profile_data: EmergencyProfileCreate | EmergencyProfileUpdate,
-) -> EmergencyProfile:
-    """DEPRECATED adapter para PUT /api/devices/{device_id}/emergency-profile.
-
-    Delega en el mismo service account-scoped: la escritura siempre va al
-    perfil canónico del ProtectedPerson del usuario dueño del Device, nunca
-    a un EmergencyProfile propio de ese Device."""
-    return put_account_profile(session, user, profile_data)
-
-
-def get_legacy_readiness_for_device(
-    session: Session, device: Device, user: User
-) -> EmergencyProfileReadinessRead:
-    """DEPRECATED adapter para GET .../emergency-profile/readiness.
-
-    Preserva el contrato HTTP legacy (EmergencyProfileReadinessRead), pero
-    internamente se construye desde ProfileReadiness + PublicationEligibility
-    + PublicAccessStatus (los tres dominios nuevos), no desde la función
-    legacy mezclada app.services.profile_readiness.calculate_profile_readiness."""
-    profile, _unavailable = get_account_profile_status(session, user)
-    protected_person = None
-    try:
-        protected_person = get_protected_person_for_user(session, user)
-    except ProtectedPersonSoftDeletedError:
-        protected_person = None
-
-    readiness = calculate_profile_readiness(profile)
-    eligibility = calculate_publication_eligibility(profile)
-    access = calculate_public_access_status(device, protected_person, profile)
-
-    return EmergencyProfileReadinessRead(
-        is_ready=readiness.is_ready,
-        can_publish=eligibility.can_publish,
-        is_public_operational=access.is_operational,
-        device_status=device.status,
-        public_profile_enabled=profile.is_public if profile is not None else False,
-        required_fields=readiness.required_fields,
-        completed_fields=readiness.completed_fields,
-        missing_fields=readiness.missing_fields,
-        blocking_reasons=access.blocking_reasons,
-        consent_version=eligibility.consent_version,
-    )
 
 
 def get_public_access_status_for_device(
