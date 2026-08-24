@@ -172,7 +172,7 @@ Device -> ProtectedPerson
 
 - Modelo SQLAlchemy `EmergencyProfile`.
 - Tabla `emergency_profiles` gestionada por Alembic.
-- `emergency_profiles.device_id -> devices.id` sigue existiendo en el modelo (columna nullable, compatibilidad historica; su DROP pertenece a un bloque CONTRACT posterior), pero ya NO es la relacion de ownership productiva: la fuente de verdad es `emergency_profiles.protected_person_id -> protected_persons.id`.
+- `emergency_profiles.device_id` existio como columna historica (compatibilidad, previa al CONTRACT) y fue eliminada por completo (`DROP COLUMN`) en la migration `0013_drop_ep_device_id` (Bloque 8.6); ya no existe en el modelo ni en el schema. La relacion de ownership vigente es `emergency_profiles.protected_person_id -> protected_persons.id`.
 - Los endpoints privados de edicion (account-scoped) requieren cookie de sesion y validan ownership con `current_user.id` contra la cuenta autenticada, no contra un `device.user_id`.
 
 Endpoints privados de perfiles de emergencia (account-scoped; los endpoints device-scoped equivalentes existieron como contrato legacy y fueron retirados en Bloque 8.3):
@@ -201,7 +201,7 @@ Sprint 17 separa identificador vinculado de ProtegID operativo:
 
 Readiness backend:
 
-- Servicio: `apps/api/app/services/emergency_profile_status.py`, que separa `ProfileReadiness` (solo perfil), `PublicationEligibility` (agrega consentimiento) y `PublicAccessStatus` (agrega Device + ProtectedPerson, especifico de un device). `profile_readiness.py` (motor legacy `calculate_profile_readiness(device, profile)`) ya no tiene callers productivos.
+- Servicio: `apps/api/app/services/emergency_profile_status.py`, que separa `ProfileReadiness` (solo perfil), `PublicationEligibility` (agrega consentimiento) y `PublicAccessStatus` (agrega Device + ProtectedPerson, especifico de un device). Es la unica fuente vigente para este calculo. El motor legacy `apps/api/app/services/profile_readiness.py` (`calculate_profile_readiness(device, profile)`) y su schema `EmergencyProfileReadinessRead` fueron eliminados por completo en Bloque 8.5; el archivo ya no existe en el repo.
 - Schema: `EmergencyProfileStatusRead`.
 - Endpoint privado: `GET /api/emergency-profile/status`.
 - Requiere cookie de sesion y no expone valores medicos ni `user_id`.

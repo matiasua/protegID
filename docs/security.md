@@ -274,7 +274,7 @@ Device -> ProtectedPerson
 
 - Modelo `EmergencyProfile`.
 - Tabla `emergency_profiles`.
-- `emergency_profiles.device_id -> devices.id` sigue existiendo en el modelo (columna nullable, compatibilidad historica; su DROP pertenece a un bloque CONTRACT posterior), pero ya NO es la relacion de ownership: la fuente de verdad es `emergency_profiles.protected_person_id -> protected_persons.id`.
+- `emergency_profiles.device_id` existio como columna historica (compatibilidad, previa al CONTRACT) y fue eliminada por completo (`DROP COLUMN`) en la migration `0013_drop_ep_device_id` (Bloque 8.6); ya no existe en el modelo ni en el schema. La relacion de ownership vigente es `emergency_profiles.protected_person_id -> protected_persons.id`.
 - Endpoints privados de edicion (account-scoped): `GET /api/emergency-profile` y `PUT /api/emergency-profile`. Los endpoints device-scoped equivalentes (`GET`/`PUT /api/devices/{device_id}/emergency-profile`) existieron como contrato legacy y fueron retirados en Bloque 8.3; ya no existen en el router (404 por ausencia de ruta).
 - Endpoint publico `GET /api/public/profiles/{public_id}`.
 
@@ -299,7 +299,7 @@ Controles de seguridad y privacidad:
 Readiness y consentimiento:
 
 - Identificador vinculado no significa ProtegID operativo.
-- `apps/api/app/services/emergency_profile_status.py` (`ProfileReadiness` + `PublicationEligibility`) es la fuente backend vigente para determinar readiness y elegibilidad de publicacion; `profile_readiness.py` (motor legacy `calculate_profile_readiness(device, profile)`) ya no tiene callers productivos.
+- `apps/api/app/services/emergency_profile_status.py` (`ProfileReadiness` + `PublicationEligibility` + `PublicAccessStatus`) es la unica fuente backend vigente para determinar readiness, elegibilidad de publicacion y estado de acceso publico. El motor legacy `apps/api/app/services/profile_readiness.py` (`calculate_profile_readiness(device, profile)`) y su schema `EmergencyProfileReadinessRead` fueron eliminados por completo en Bloque 8.5; el archivo ya no existe en el repo.
 - `GET /api/emergency-profile/status` requiere cookie de sesion y no expone valores medicos.
 - Campos minimos: `display_name`, contacto de emergencia completo, decision explicita para condiciones medicas/alergias/medicamentos, consentimiento aceptado, version vigente e `is_public=true`.
 - El consentimiento es explicito, versionado con `PUBLIC_PROFILE_CONSENT_VERSION` y no se infiere desde `is_public`.

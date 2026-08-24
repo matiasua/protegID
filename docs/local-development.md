@@ -267,7 +267,7 @@ canonico; `Device -> ProtectedPerson` (el `Device` no es dueno del perfil).
 
 - Modelo `EmergencyProfile`.
 - Tabla `emergency_profiles`.
-- `emergency_profiles.device_id -> devices.id` sigue existiendo en el modelo por compatibilidad historica (columna nullable, ya no es la relacion de ownership productiva; su DROP pertenece a un bloque CONTRACT posterior), pero la fuente de verdad es `emergency_profiles.protected_person_id -> protected_persons.id`.
+- `emergency_profiles.device_id` existio como columna historica (compatibilidad, previa al CONTRACT) y fue eliminada por completo (`DROP COLUMN`) en la migration `0013_drop_ep_device_id` (Bloque 8.6); ya no existe en el modelo ni en el schema. La relacion de ownership vigente es `emergency_profiles.protected_person_id -> protected_persons.id`.
 
 Endpoints protegidos (account-scoped; los endpoints device-scoped equivalentes fueron retirados en Bloque 8.3):
 
