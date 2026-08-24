@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.settings import get_settings
 from app.models import Device
+from app.services.claim_codes import hash_claim_code
 from tests.helpers import create_pending_device_with_claim_code
 from app.services.device_ids import generate_public_id
 
@@ -269,6 +270,103 @@ def test_locked_device_still_returns_429_not_unified_400(
     response = _activate(client, authed, device.public_id, claim_code)
 
     assert response.status_code == 429
+
+
+def test_non_pending_but_unassigned_device_returns_generic_rejection(
+    client: TestClient, make_authed_user, session_factory: sessionmaker
+) -> None:
+    """Aísla `device.status != "pending_activation"` del OR productivo: este
+    Device nunca fue asignado a un usuario (user_id sigue None), solo su
+    status difiere de pending_activation."""
+    authed = make_authed_user()
+    claim_code = "AAAA-BBBB-CCCC"
+
+    session = session_factory()
+    device = Device(
+        public_id=generate_public_id(),
+        status="disabled",
+        device_type="qr_nfc_tag",
+        claim_code_hash=hash_claim_code(claim_code),
+        user_id=None,
+    )
+    session.add(device)
+    session.commit()
+    session.refresh(device)
+    public_id = device.public_id
+    device_id = device.id
+    before = {
+        "status": device.status,
+        "user_id": device.user_id,
+        "claim_attempts": device.claim_attempts,
+        "activated_at": device.activated_at,
+        "claimed_at": device.claimed_at,
+    }
+    session.close()
+
+    response = _activate(client, authed, public_id, claim_code)
+
+    assert response.status_code == EXPECTED_STATUS
+    assert response.json() == EXPECTED_BODY
+
+    session = session_factory()
+    try:
+        after = session.get(Device, device_id)
+        assert after.status == before["status"]
+        assert after.user_id == before["user_id"]
+        assert after.claim_attempts == before["claim_attempts"]
+        assert after.activated_at == before["activated_at"]
+        assert after.claimed_at == before["claimed_at"]
+    finally:
+        session.close()
+
+
+def test_pending_but_already_assigned_device_returns_generic_rejection(
+    client: TestClient, make_authed_user, session_factory: sessionmaker
+) -> None:
+    """Aísla `device.user_id is not None` del OR productivo: este Device
+    sigue en status pending_activation, solo su user_id ya está asignado
+    (nunca pasó por el flujo real de activación que lo movería a active)."""
+    authed = make_authed_user()
+    owner = make_authed_user()
+    claim_code = "AAAA-BBBB-CCCC"
+
+    session = session_factory()
+    device = Device(
+        public_id=generate_public_id(),
+        status="pending_activation",
+        device_type="qr_nfc_tag",
+        claim_code_hash=hash_claim_code(claim_code),
+        user_id=owner.user.id,
+    )
+    session.add(device)
+    session.commit()
+    session.refresh(device)
+    public_id = device.public_id
+    device_id = device.id
+    before = {
+        "status": device.status,
+        "user_id": device.user_id,
+        "claim_attempts": device.claim_attempts,
+        "activated_at": device.activated_at,
+        "claimed_at": device.claimed_at,
+    }
+    session.close()
+
+    response = _activate(client, authed, public_id, claim_code)
+
+    assert response.status_code == EXPECTED_STATUS
+    assert response.json() == EXPECTED_BODY
+
+    session = session_factory()
+    try:
+        after = session.get(Device, device_id)
+        assert after.status == before["status"]
+        assert after.user_id == before["user_id"]
+        assert after.claim_attempts == before["claim_attempts"]
+        assert after.activated_at == before["activated_at"]
+        assert after.claimed_at == before["claimed_at"]
+    finally:
+        session.close()
 
 
 def test_unauthenticated_request_returns_401(
