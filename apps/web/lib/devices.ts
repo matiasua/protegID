@@ -24,7 +24,11 @@ function createActivateDeviceRequestError(status: number): ApiRequestError {
 }
 
 function createActivateDeviceWithClaimCodeRequestError(status: number): ApiRequestError {
-  if (status === 400) {
+  // 400 y 404 se tratan como el mismo rechazo genérico de activación: el
+  // backend ya no debería usar 404 para credential/state mismatch (D2,
+  // enumeration hardening), pero el frontend no debe reintroducir esa
+  // distinción si una regresión futura lo hiciera (defense in depth).
+  if (status === 400 || status === 404) {
     return new ApiRequestError("Datos de activación inválidos.", status);
   }
 
@@ -34,10 +38,6 @@ function createActivateDeviceWithClaimCodeRequestError(status: number): ApiReque
 
   if (status === 403) {
     return new ApiRequestError("Debes verificar tu correo antes de realizar esta acción.", status);
-  }
-
-  if (status === 404) {
-    return new ApiRequestError("Identificador no disponible.", status);
   }
 
   if (status === 422) {
