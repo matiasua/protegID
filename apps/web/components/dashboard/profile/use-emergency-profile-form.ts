@@ -37,8 +37,11 @@ export function useEmergencyProfileForm(enabled: boolean, emailVerified: boolean
 
   const baselineRef = useRef<ProfileFormState>(form);
   const isSavingRef = useRef(false);
+  const loadGenerationRef = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
+
     setLoadErrorMessage(null);
     setIsLoadingProfile(true);
     setIsLoadingStatus(true);
@@ -48,6 +51,14 @@ export function useEmergencyProfileForm(enabled: boolean, emailVerified: boolean
         getEmergencyProfile(),
         getEmergencyProfileStatus(),
       ]);
+
+      // A newer load may have started (or this one may have been invalidated by
+      // effect cleanup) while these requests were in flight. Only the most
+      // recent load is allowed to touch state, so a stale response can never
+      // clobber form data the user has since typed or a newer load's result.
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
 
       const nextForm = loadedProfile ? createProfileForm(loadedProfile) : createEmptyProfileForm();
 
@@ -59,19 +70,33 @@ export function useEmergencyProfileForm(enabled: boolean, emailVerified: boolean
       setSaveStatus("initial");
       setSaveErrorMessage(null);
     } catch (error) {
+      if (generation !== loadGenerationRef.current) {
+        return;
+      }
+
       setLoadErrorMessage(getProfileErrorMessage(error, "No se pudo cargar el perfil de emergencia."));
     } finally {
-      setIsLoadingProfile(false);
-      setIsLoadingStatus(false);
+      if (generation === loadGenerationRef.current) {
+        setIsLoadingProfile(false);
+        setIsLoadingStatus(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (enabled) {
-      void load();
+    if (!enabled) {
+      return undefined;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+
+    void load();
+
+    return () => {
+      // Invalidate this load's generation so a response that resolves after
+      // cleanup (StrictMode's setup/cleanup/setup, unmount, or `enabled`
+      // flipping) can never apply its result.
+      loadGenerationRef.current += 1;
+    };
+  }, [enabled, load]);
 
   const applyFormUpdate = useCallback((updater: (current: ProfileFormState) => ProfileFormState) => {
     setForm((current) => {
