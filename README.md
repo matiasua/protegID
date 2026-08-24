@@ -161,13 +161,14 @@ Consentimiento:
 - Si `public_consent_version` no coincide con la version vigente, el perfil no queda operativo.
 - El consentimiento no se expone publicamente.
 
-Readiness backend:
+Readiness backend (CONTRACT, Bloque 8.3: el endpoint device-scoped que
+existia aqui fue retirado; el contrato vigente es account-scoped):
 
-- Servicio: `calculate_profile_readiness(device, profile)`.
-- Schema: `EmergencyProfileReadinessRead`.
-- Endpoint privado: `GET /api/devices/{device_id}/emergency-profile/readiness`.
-- Requiere autenticacion, verifica ownership y no expone valores medicos, `user_id` ni `device_id`.
-- Devuelve claves de campos requeridos, completados, faltantes y bloqueos.
+- Servicio: `apps/api/app/services/emergency_profile_status.py` (`ProfileReadiness` + `PublicationEligibility`).
+- Schema: `EmergencyProfileStatusRead`.
+- Endpoint privado: `GET /api/emergency-profile/status`.
+- Requiere autenticacion y no expone valores medicos ni `user_id`.
+- Devuelve claves de campos requeridos, completados, faltantes y elegibilidad de publicacion.
 
 Publicacion segura:
 
@@ -259,8 +260,8 @@ El login frontend usa la sesion server-side productiva.
 - Permite activar/asociar un identificador fisico desde la seccion `Activar identificador` ingresando `public_id` y `claim_code`.
 - Por cada dispositivo, consulta estado QR con `GET /api/admin/devices/{device_id}/qr`.
 - Permite generar o regenerar QR desde la GUI con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
-- Permite seleccionar un dispositivo y cargar su perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
-- Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- Permite seleccionar un dispositivo y cargar el perfil privado de la cuenta con `GET /api/emergency-profile` (account-scoped; no es una propiedad del device).
+- Permite crear o actualizar el perfil con `PUT /api/emergency-profile`.
 - Si no hay sesion, `/dashboard` muestra estado no autenticado y boton/link `Ir a login`.
 - No tiene fallback de token manual.
 - Tiene boton `Cerrar sesion` que llama `POST /api/auth/logout` con CSRF.

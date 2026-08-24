@@ -7,52 +7,26 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Device, EmergencyProfile
-
-
-def get_profile_by_device_id(
-    session: Session, device_id: UUID
-) -> EmergencyProfile | None:
-    statement = select(EmergencyProfile).where(EmergencyProfile.device_id == device_id)
-    return session.scalar(statement)
+from app.models import EmergencyProfile
 
 
 def get_active_profiles_by_protected_person_id(
     session: Session, protected_person_id: UUID
 ) -> list[EmergencyProfile]:
-    """Perfiles activos (deleted_at IS NULL) de un ProtectedPerson, en orden
-    determinístico (created_at ASC, id ASC) para que la resolución canónica
-    transitoria sea reproducible."""
-    statement = (
-        select(EmergencyProfile)
-        .where(
-            EmergencyProfile.protected_person_id == protected_person_id,
-            EmergencyProfile.deleted_at.is_(None),
-        )
-        .order_by(EmergencyProfile.created_at.asc(), EmergencyProfile.id.asc())
+    """Perfiles activos (deleted_at IS NULL) de un ProtectedPerson. En una DB
+    HEAD sana hay a lo sumo 1 (uq_emergency_profiles_active_protected_person);
+    ver app.services.emergency_profile_canonical para la resolución/fail
+    closed sobre este resultado."""
+    statement = select(EmergencyProfile).where(
+        EmergencyProfile.protected_person_id == protected_person_id,
+        EmergencyProfile.deleted_at.is_(None),
     )
     return list(session.scalars(statement))
-
-
-def get_profile_candidate_by_public_id(
-    session: Session, public_id: str
-) -> tuple[Device, EmergencyProfile | None] | None:
-    statement = (
-        select(Device, EmergencyProfile)
-        .outerjoin(EmergencyProfile, EmergencyProfile.device_id == Device.id)
-        .where(Device.public_id == public_id)
-    )
-    row = session.execute(statement).one_or_none()
-    if row is None:
-        return None
-
-    return row[0], row[1]
 
 
 def create_profile(
     session: Session,
     *,
-    device_id: UUID | None = None,
     protected_person_id: UUID | None = None,
     display_name: str | None = None,
     blood_type: str | None = None,
@@ -71,7 +45,6 @@ def create_profile(
     public_consent_version: str | None = None,
 ) -> EmergencyProfile:
     profile = EmergencyProfile(
-        device_id=device_id,
         protected_person_id=protected_person_id,
         display_name=display_name,
         blood_type=blood_type,

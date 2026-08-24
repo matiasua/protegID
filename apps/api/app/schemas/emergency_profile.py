@@ -78,7 +78,6 @@ class EmergencyProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    device_id: UUID | None = None
     display_name: str | None = None
     blood_type: str | None = None
     allergies: str | None = None
@@ -97,19 +96,6 @@ class EmergencyProfileRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
-
-
-class EmergencyProfileReadinessRead(BaseModel):
-    is_ready: bool
-    can_publish: bool
-    is_public_operational: bool
-    device_status: str | None = None
-    public_profile_enabled: bool
-    required_fields: list[str]
-    completed_fields: list[str]
-    missing_fields: list[str]
-    blocking_reasons: list[str]
-    consent_version: str
 
 
 class ProfileReadinessRead(BaseModel):

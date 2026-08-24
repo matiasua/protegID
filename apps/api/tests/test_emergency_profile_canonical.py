@@ -1,10 +1,11 @@
-"""Bloque 4: resolución canónica transitoria de EmergencyProfile.
+"""Bloque 8.4: resolución canónica de EmergencyProfile.
 
-Every test here exercises the >1-ACTIVE-profile transitional resolver
-directly, which 0012's partial unique index forbids constructing at head.
-Per Bloque 5 (0012), that resolver stays deployed for the rollout window
-before 0012 has run everywhere - so this module runs pinned to 0011, the
-schema state where that window is real (see tests/conftest.py
+Post-0012 el invariante de la DB es a lo sumo 1 EmergencyProfile activo por
+ProtectedPerson (uq_emergency_profiles_active_protected_person). El resolver
+es 0/1/fail-closed; no elige entre >1 candidatos, sean equivalentes o
+divergentes. Ese estado >1 no es representable a HEAD vía el ORM normal (el
+índice único lo impide), así que este módulo corre pinned a 0011, la última
+revisión donde >1 activo era construible (see tests/conftest.py
 db_at_revision_0011)."""
 
 from datetime import UTC, datetime, timedelta
@@ -52,23 +53,23 @@ def test_single_profile_is_canonical(session_factory: sessionmaker) -> None:
         session.close()
 
 
-def test_multiple_equivalent_profiles_resolve_deterministically(
+def test_multiple_equivalent_profiles_fail_closed(
     session_factory: sessionmaker,
 ) -> None:
+    """>1 activo es siempre una violación de integridad, incluso si su
+    contenido es idéntico: el resolver no compara equivalencia ni elige un
+    ganador determinístico. Eso era comportamiento transitorio, retirado tras
+    0012 (ver Bloque 8.4)."""
     session = session_factory()
     try:
         pp = _protected_person(session)
         older = make_active_profile(session, protected_person_id=pp.id)
         older.created_at = datetime.now(UTC) - timedelta(days=1)
         session.commit()
-        newer = make_active_profile(session, protected_person_id=pp.id)
+        make_active_profile(session, protected_person_id=pp.id)
 
-        result_1 = get_canonical_emergency_profile(session, pp)
-        result_2 = get_canonical_emergency_profile(session, pp)
-
-        assert result_1.id == older.id
-        assert result_2.id == older.id
-        assert result_1.id != newer.id
+        with pytest.raises(CanonicalProfileDivergenceError):
+            get_canonical_emergency_profile(session, pp)
     finally:
         session.close()
 

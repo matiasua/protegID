@@ -1,21 +1,22 @@
-"""CLI read-only: corre los preflights de ProtectedPerson contra DATABASE_URL.
+"""CLI read-only: corre el preflight de consolidación de ProtectedPerson contra DATABASE_URL.
 
 No escribe nada en la base de datos y nunca imprime contenido médico o PII
-completo, solo el resumen agregado de cada reporte (ids de fila y hashes
-seguros por campo divergente, nunca el contenido real).
+completo, solo el resumen agregado del reporte (ids de fila y hashes seguros
+por campo divergente, nunca el contenido real).
 
 Uso:
     DATABASE_URL=postgresql://... python scripts/preflight_protected_persons.py
 
-Corre dos preflights independientes, ambos de solo lectura:
-  - Bloque 3 (0011): agrupa por User vía device_id. Relevante antes de que
-    protected_person_id exista/esté poblado.
-  - Bloque 5 (0012): agrupa EmergencyProfile ACTIVOS por protected_person_id
-    directamente - la precondición real que 0012 valida (NULL count, >1
-    activo, equivalencia/divergencia entre ellos).
+Corre el preflight de Bloque 5 (0012): agrupa EmergencyProfile ACTIVOS por
+protected_person_id directamente - la precondición real que 0012 valida (NULL
+count, >1 activo, equivalencia/divergencia entre ellos). Puede ejecutarse
+antes de aplicar esa migración, incluyendo (con cuidado) contra development,
+ya que es puramente de lectura.
 
-Puede ejecutarse antes de aplicar cualquiera de esas migraciones, incluyendo
-(con cuidado) contra development, ya que es puramente de lectura.
+Bloque 8.6 retiró el preflight de Bloque 3 (0011, agrupaba por User vía
+EmergencyProfile.device_id): esa columna fue eliminada en 0013 y 0011 ya
+corrió en toda DB de este linaje, así que no queda ningún escenario legítimo
+para ejecutarlo.
 """
 
 from __future__ import annotations
@@ -24,10 +25,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.settings import get_settings
-from app.services.protected_person_preflight import (
-    run_consolidation_preflight,
-    run_preflight,
-)
+from app.services.protected_person_preflight import run_consolidation_preflight
 
 
 def _database_url() -> str:
@@ -43,25 +41,11 @@ def main() -> None:
     engine = create_engine(_database_url())
     try:
         with Session(bind=engine) as session:
-            report = run_preflight(session)
             consolidation_report = run_consolidation_preflight(session)
     finally:
         engine.dispose()
 
-    print("=== ProtectedPerson preflight report (Bloque 3 / 0011) ===")
-    print(f"users_with_devices:          {report.users_with_devices}")
-    print(f"devices_without_user:        {report.devices_without_user}")
-    print(f"profiles_on_orphan_devices:  {report.profiles_on_orphan_devices}")
-    print(f"users_with_zero_profiles:    {report.users_with_zero_profiles}")
-    print(f"users_with_one_profile:      {report.users_with_one_profile}")
-    print(f"users_with_multiple_profiles:{report.users_with_multiple_profiles}")
-    print(f"equivalent_profile_groups:   {len(report.equivalent_profile_groups)}")
-    print(f"divergent_profile_groups:    {len(report.divergent_profile_groups)}")
-    print(f"soft_deleted_profiles:       {report.soft_deleted_profiles}")
-    print(f"soft_deleted_devices:        {report.soft_deleted_devices}")
-    print(f"fk_inconsistencies:          {len(report.fk_inconsistencies)}")
-
-    print("\n=== ProtectedPerson consolidation preflight (Bloque 5 / 0012) ===")
+    print("=== ProtectedPerson consolidation preflight (Bloque 5 / 0012) ===")
     print(
         "protected_person_id_null_count:   "
         f"{consolidation_report.protected_person_id_null_count}"
@@ -82,16 +66,6 @@ def main() -> None:
     )
 
     blocking = False
-
-    if report.has_blocking_divergence:
-        blocking = True
-        print("\nBLOCKING (0011): divergent EmergencyProfile content found. Details:")
-        for divergence in report.divergent_profile_groups:
-            print(
-                f"  user={divergence.user_id} "
-                f"devices={divergence.device_public_ids} "
-                f"fields={divergence.divergent_fields}"
-            )
 
     if consolidation_report.protected_person_id_null_count:
         blocking = True

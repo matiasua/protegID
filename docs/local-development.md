@@ -41,7 +41,8 @@ Servicios principales:
 - Admin device QR status: `http://localhost:8080/api/admin/devices/{device_id}/qr`
 - Admin device QR generate: `http://localhost:8080/api/admin/devices/{device_id}/qr`
 - Admin device QR download: `http://localhost:8080/api/admin/devices/{device_id}/qr/download`
-- Private emergency profile: `http://localhost:8080/api/devices/{device_id}/emergency-profile`
+- Private emergency profile (account-scoped): `http://localhost:8080/api/emergency-profile`
+- Device public access status: `http://localhost:8080/api/devices/{device_id}/public-access-status`
 - Public emergency profile: `http://localhost:8080/api/public/profiles/{public_id}`
 - Web directa en desarrollo: `http://localhost:3000`
 - API directa en desarrollo: `http://localhost:8000/api/health`
@@ -260,17 +261,23 @@ Limites actuales: el registro de usuario final desde primer escaneo existe, pero
 
 ## Public Profile Foundation
 
-La API incluye la base de perfiles publicos de emergencia:
+La API incluye la base de perfiles publicos de emergencia. Arquitectura
+actual (CONTRACT): `User/Account -> ProtectedPerson -> EmergencyProfile`
+canonico; `Device -> ProtectedPerson` (el `Device` no es dueno del perfil).
 
 - Modelo `EmergencyProfile`.
 - Tabla `emergency_profiles`.
-- Relacion unica `emergency_profiles.device_id -> devices.id`.
+- `emergency_profiles.device_id` existio como columna historica (compatibilidad, previa al CONTRACT) y fue eliminada por completo (`DROP COLUMN`) en la migration `0013_drop_ep_device_id` (Bloque 8.6); ya no existe en el modelo ni en el schema. La relacion de ownership vigente es `emergency_profiles.protected_person_id -> protected_persons.id`.
 
-Endpoints protegidos:
+Endpoints protegidos (account-scoped; los endpoints device-scoped equivalentes fueron retirados en Bloque 8.3):
 
-- `GET /api/devices/{device_id}/emergency-profile`: requiere cookie de sesion, valida ownership del device y devuelve el perfil completo del dueno.
-- `PUT /api/devices/{device_id}/emergency-profile`: requiere cookie de sesion y CSRF, valida ownership del device y crea o actualiza el perfil.
-- `GET /api/devices/{device_id}/emergency-profile/readiness`: requiere cookie de sesion, valida ownership y devuelve readiness sin valores medicos.
+- `GET /api/emergency-profile`: requiere cookie de sesion y devuelve el perfil completo de la cuenta autenticada.
+- `PUT /api/emergency-profile`: requiere cookie de sesion y CSRF, crea o actualiza el perfil de la cuenta autenticada.
+- `GET /api/emergency-profile/status`: requiere cookie de sesion y devuelve readiness + publication eligibility sin valores medicos.
+
+Endpoint device-scoped que si permanece vigente:
+
+- `GET /api/devices/{device_id}/public-access-status`: requiere cookie de sesion, valida ownership del device y devuelve si ese device concreto esta operativo para servir el perfil publico (combina Device + ProtectedPerson + EmergencyProfile).
 
 Endpoint publico:
 
@@ -357,8 +364,8 @@ Estado actual:
 - No mantiene fallback de token manual.
 - Tiene boton `Cerrar sesion` que llama `POST /api/auth/logout` con CSRF.
 - Permite seleccionar un dispositivo.
-- Carga el perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
-- Permite crear o actualizar el perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- Carga el perfil privado de la cuenta con `GET /api/emergency-profile` (account-scoped, no depende del device seleccionado).
+- Permite crear o actualizar el perfil con `PUT /api/emergency-profile`.
 
 Campos disponibles del perfil:
 

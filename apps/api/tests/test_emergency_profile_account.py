@@ -47,7 +47,7 @@ def test_put_account_profile_without_device_creates_person_and_profile(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["device_id"] is None
+    assert "device_id" not in body
     assert body["display_name"] == "Jane Doe"
 
     session = session_factory()

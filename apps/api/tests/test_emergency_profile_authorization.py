@@ -1,5 +1,5 @@
-"""Bloque 4: autorización/IDOR para los endpoints account-scoped y
-device-scoped legacy adapters."""
+"""Bloque 4: autorización/IDOR para los endpoints account-scoped de
+EmergencyProfile."""
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
@@ -60,30 +60,6 @@ def test_account_put_only_affects_current_user_profile(
 
     assert response_a.json()["display_name"] == "A's profile"
     assert response_b.json()["display_name"] == "B's profile"
-
-
-def test_user_cannot_use_legacy_endpoint_with_foreign_device(
-    client: TestClient, make_authed_user, session_factory: sessionmaker
-) -> None:
-    owner = make_authed_user()
-    intruder = make_authed_user()
-    session = session_factory()
-    device, claim_code = create_pending_device_with_claim_code(session)
-    session.close()
-    activated = _activate(client, owner, device, claim_code)
-
-    get_response = client.get(
-        f"/api/devices/{activated['id']}/emergency-profile", cookies=intruder.cookies
-    )
-    put_response = client.put(
-        f"/api/devices/{activated['id']}/emergency-profile",
-        json=ready_profile_payload(),
-        cookies=intruder.cookies,
-        headers=intruder.headers,
-    )
-
-    assert get_response.status_code == 404
-    assert put_response.status_code == 404
 
 
 def test_client_cannot_send_protected_person_id_in_put_payload(

@@ -65,13 +65,12 @@ def make_active_device_for_protected_person(
 
 
 def make_active_profile(
-    session: Session, *, protected_person_id, device_id=None, **overrides: object
+    session: Session, *, protected_person_id, **overrides: object
 ) -> EmergencyProfile:
     values = ready_profile_payload()
     values.update(overrides)
     profile = EmergencyProfile(
         protected_person_id=protected_person_id,
-        device_id=device_id,
         **values,
     )
     session.add(profile)

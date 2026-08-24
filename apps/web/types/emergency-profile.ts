@@ -2,8 +2,8 @@ type NullableString = string | null;
 
 /**
  * Perfil de emergencia — account-scoped (ProtectedPerson), no Device.
- * El backend puede incluir un campo device_id legacy en el payload; el
- * frontend lo ignora deliberadamente y no lo modela aquí.
+ * EmergencyProfile.device_id fue eliminado del backend (Bloque 8.6): el
+ * payload nunca incluye ese campo.
  */
 export type EmergencyProfile = {
   id: string;

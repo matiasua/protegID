@@ -136,7 +136,7 @@ def _flush_rate_limit_state_before_test() -> Generator[None, None, None]:
 
 
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
-_HEAD_REVISION = "0012_consolidate_active_ep"
+_HEAD_REVISION = "0013_drop_ep_device_id"
 
 
 def _current_revision(engine: Engine) -> str | None:
@@ -193,28 +193,13 @@ def _db_pinned_to_revision(engine: Engine, revision: str) -> Generator[None, Non
 @pytest.fixture
 def db_at_revision_0011(engine: Engine) -> Generator[None, None, None]:
     """Pins the test DB schema to 0011_backfill_protected_persons for the
-    test, then always restores HEAD (0012), even if the test fails.
+    test, then always restores HEAD, even if the test fails.
 
     Use via `pytestmark = [pytest.mark.migration, pytest.mark.usefixtures("db_at_revision_0011")]`
     at module level for files where every test needs this. See
     `_db_pinned_to_revision` for the mechanics and the xdist caveat.
     """
     with _db_pinned_to_revision(engine, "0011_backfill_protected_persons"):
-        yield
-
-
-@pytest.fixture
-def db_at_revision_0010(engine: Engine) -> Generator[None, None, None]:
-    """Pins the test DB schema to 0010_add_protected_persons for the test,
-    then always restores HEAD (0012), even if the test fails.
-
-    Only use this instead of `db_at_revision_0011` when the scenario
-    genuinely needs something 0010 has that 0011 doesn't (e.g.
-    emergency_profiles.protected_person_id being introduced-but-still
-    entirely optional, before 0011's backfill/device_id-nullable changes).
-    See `_db_pinned_to_revision` for the mechanics and the xdist caveat.
-    """
-    with _db_pinned_to_revision(engine, "0010_add_protected_persons"):
         yield
 
 

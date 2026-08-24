@@ -18,8 +18,10 @@ Backend FastAPI para ProtegID.
 - `GET /api/admin/devices/{device_id}/qr`
 - `POST /api/admin/devices/{device_id}/qr`
 - `GET /api/admin/devices/{device_id}/qr/download`
-- `GET /api/devices/{device_id}/emergency-profile`
-- `PUT /api/devices/{device_id}/emergency-profile`
+- `GET /api/emergency-profile`
+- `PUT /api/emergency-profile`
+- `GET /api/emergency-profile/status`
+- `GET /api/devices/{device_id}/public-access-status`
 - `GET /api/public/profiles/{public_id}`
 
 ## Auth y Sesiones Server-Side
@@ -75,7 +77,7 @@ Registro publico y verificacion de email:
 
 No hay refresh token, recuperacion de password ni MFA.
 
-Acciones criticas requieren email verificado: `POST /api/devices/activate`, `POST /api/admin/devices`, `PUT /api/devices/{device_id}/emergency-profile` y operaciones admin de QR. Usuarios autenticados no verificados pueden iniciar sesion, consultar `/api/auth/me`, listar sus devices y reenviar verificacion.
+Acciones criticas requieren email verificado: `POST /api/devices/activate`, `POST /api/admin/devices`, `PUT /api/emergency-profile` y operaciones admin de QR. Usuarios autenticados no verificados pueden iniciar sesion, consultar `/api/auth/me`, listar sus devices y reenviar verificacion.
 
 Ver detalles operativos en `../../docs/auth-email-verification.md`.
 
@@ -208,20 +210,22 @@ Validacion esperada:
 
 ## Public Profile Foundation
 
-El backend incluye modelo `EmergencyProfile`, tabla `emergency_profiles` y relacion unica `emergency_profiles.device_id -> devices.id`.
+El backend incluye modelo `EmergencyProfile`, tabla `emergency_profiles` y relacion `emergency_profiles.protected_person_id -> protected_persons.id` (unica sobre perfiles activos, via `uq_emergency_profiles_active_protected_person`). `emergency_profiles.device_id` existio como columna historica y fue eliminada por completo (`DROP COLUMN`) en la migration `0013_drop_ep_device_id` (Bloque 8.6); ya no existe en el modelo ni en el schema.
 
-Endpoints privados:
+Endpoints privados (Sprint 17, device-scoped): `GET/PUT /api/devices/{device_id}/emergency-profile`
+y `GET /api/devices/{device_id}/emergency-profile/readiness` fueron retirados por completo en
+Bloque 8.3. El contrato productivo vigente es account-scoped: `GET/PUT /api/emergency-profile`
+y `GET /api/emergency-profile/status` (ver `apps/api/app/api/emergency_profiles.py`).
 
-- `GET /api/devices/{device_id}/emergency-profile`: requiere cookie de sesion, valida que el device pertenezca al usuario autenticado y devuelve el perfil completo.
-- `PUT /api/devices/{device_id}/emergency-profile`: requiere cookie de sesion y CSRF, valida que el device pertenezca al usuario autenticado y crea o actualiza el perfil.
-- `GET /api/devices/{device_id}/emergency-profile/readiness`: requiere cookie de sesion, valida ownership y devuelve readiness sin valores medicos.
-
-Profile readiness Sprint 17:
+Profile readiness Sprint 17 (historico):
 
 - Identificador vinculado no significa ProtegID operativo.
 - ProtegID queda operativo solo si el perfil cumple datos minimos, consentimiento vigente y `is_public=true`.
-- Servicio: `calculate_profile_readiness(device, profile)`.
-- Schema: `EmergencyProfileReadinessRead`.
+- Servicio vigente: `apps/api/app/services/emergency_profile_status.py`, que separa
+  `ProfileReadiness` (solo `EmergencyProfile`), `PublicationEligibility` (agrega consentimiento) y
+  `PublicAccessStatus` (agrega Device + ProtectedPerson). El motor legacy
+  `calculate_profile_readiness(device, profile)` y su schema `EmergencyProfileReadinessRead`
+  fueron eliminados en Bloque 8.5.
 - Nuevos campos: `medical_conditions_none`, `allergies_none`, `medications_none`, `public_consent_accepted_at`, `public_consent_version`.
 - `is_public` tiene default `false` para nuevos perfiles.
 - `PUBLIC_PROFILE_CONSENT_VERSION` define la version vigente de consentimiento.
@@ -299,8 +303,8 @@ El frontend privado existe en `/login` y `/dashboard`; Sprint 12 agrega activaci
 - Carga dispositivos con `GET /api/devices`.
 - Permite activar/asociar un identificador fisico desde la seccion `Activar identificador` usando `public_id + claim_code` y `POST /api/devices/activate`.
 - Permite seleccionar un dispositivo.
-- Carga perfil privado con `GET /api/devices/{device_id}/emergency-profile`.
-- Crea o actualiza perfil con `PUT /api/devices/{device_id}/emergency-profile`.
+- Carga perfil privado con `GET /api/emergency-profile` (account-scoped, no device-scoped).
+- Crea o actualiza perfil con `PUT /api/emergency-profile`.
 - Consulta estado QR por dispositivo con `GET /api/admin/devices/{device_id}/qr`.
 - Permite generar o regenerar QR con `POST /api/admin/devices/{device_id}/qr` cuando el usuario tiene `role=admin`.
 - Permite descargar QR con `GET /api/admin/devices/{device_id}/qr/download` mediante `downloadDeviceQr(deviceId): Promise<Blob>`.
@@ -411,27 +415,27 @@ curl -OJ http://localhost:8000/api/admin/devices/<device_id>/qr/download \
 
 La descarga responde `401` sin sesion, `403` con usuario no admin, `404` si el device o el QR no existe y `200 image/png` si el QR existe.
 
-Get private emergency profile:
+Get private emergency profile (account-scoped):
 
 ```bash
-curl http://localhost:8000/api/devices/<device_id>/emergency-profile \
+curl http://localhost:8000/api/emergency-profile \
   -H 'Cookie: protegid_session=<cookie>'
 ```
 
 Create or update private emergency profile:
 
 ```bash
-curl -X PUT http://localhost:8000/api/devices/<device_id>/emergency-profile \
+curl -X PUT http://localhost:8000/api/emergency-profile \
   -H 'Cookie: protegid_session=<cookie>; protegid_csrf=<csrf>' \
   -H 'X-CSRF-Token: <csrf>' \
   -H 'Content-Type: application/json' \
   -d '{"display_name":"Example User","emergency_contact_name":"Contact","emergency_contact_phone":"+56912345678","emergency_contact_relationship":"Family","medical_conditions_none":true,"allergies_none":true,"medications_none":true,"public_consent_accepted_at":"2026-05-24T12:00:00Z","public_consent_version":"2026-05-v1","is_public":true}'
 ```
 
-Get private emergency profile readiness:
+Get private emergency profile status:
 
 ```bash
-curl http://localhost:8000/api/devices/<device_id>/emergency-profile/readiness \
+curl http://localhost:8000/api/emergency-profile/status \
   -H 'Cookie: protegid_session=<cookie>'
 ```
 
