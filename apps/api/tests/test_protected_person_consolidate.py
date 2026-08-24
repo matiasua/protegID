@@ -68,7 +68,7 @@ def _create_profile(session, *, protected_person_id, **overrides) -> EmergencyPr
         "medications_none": True,
     }
     values.update(overrides)
-    profile = EmergencyProfile(protected_person_id=protected_person_id, device_id=None, **values)
+    profile = EmergencyProfile(protected_person_id=protected_person_id, **values)
     session.add(profile)
     session.commit()
     session.refresh(profile)
@@ -234,7 +234,6 @@ def test_f_protected_person_id_null_aborts_migration(session_factory: sessionmak
         session = session_factory()
         profile = EmergencyProfile(
             protected_person_id=None,
-            device_id=None,
             display_name="Sin dueño",
             medical_conditions_none=True,
             allergies_none=True,

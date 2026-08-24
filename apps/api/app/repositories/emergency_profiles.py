@@ -10,13 +10,6 @@ from sqlalchemy.orm import Session
 from app.models import EmergencyProfile
 
 
-def get_profile_by_device_id(
-    session: Session, device_id: UUID
-) -> EmergencyProfile | None:
-    statement = select(EmergencyProfile).where(EmergencyProfile.device_id == device_id)
-    return session.scalar(statement)
-
-
 def get_active_profiles_by_protected_person_id(
     session: Session, protected_person_id: UUID
 ) -> list[EmergencyProfile]:
@@ -34,7 +27,6 @@ def get_active_profiles_by_protected_person_id(
 def create_profile(
     session: Session,
     *,
-    device_id: UUID | None = None,
     protected_person_id: UUID | None = None,
     display_name: str | None = None,
     blood_type: str | None = None,
@@ -53,7 +45,6 @@ def create_profile(
     public_consent_version: str | None = None,
 ) -> EmergencyProfile:
     profile = EmergencyProfile(
-        device_id=device_id,
         protected_person_id=protected_person_id,
         display_name=display_name,
         blood_type=blood_type,

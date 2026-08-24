@@ -78,7 +78,6 @@ class EmergencyProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    device_id: UUID | None = None
     display_name: str | None = None
     blood_type: str | None = None
     allergies: str | None = None

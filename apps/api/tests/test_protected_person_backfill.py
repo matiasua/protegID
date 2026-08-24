@@ -14,6 +14,13 @@ Todos corren contra la DB de test aislada (ver tests/conftest.py); nunca tocan
 development. `cfg` y `session` se inicializan antes del try en cada test para
 que el `finally` (que siempre debe dejar la DB en head) nunca falle con un
 NameError si algo revienta antes.
+
+Desde el Bloque 8.6, `EmergencyProfile.device_id` ya no existe en el modelo
+ORM vivo (columna retirada en 0013): estos tests, que insertan/leen perfiles
+legacy con device_id contra un schema downgradeado a 0010, usan los helpers
+`_legacy_*` de abajo (SQLAlchemy Core sobre la tabla reflejada) en vez de
+`app.repositories.emergency_profiles.create_profile`/`get_profile_by_device_id`
+(que ya no aceptan/exponen device_id, ver Bloque 8.6).
 """
 
 import builtins
@@ -30,7 +37,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app.models import Device, EmergencyProfile, ProtectedPerson
-from app.repositories.emergency_profiles import create_profile, get_profile_by_device_id
 from app.repositories.users import create_user
 
 _ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
@@ -40,6 +46,57 @@ _MIGRATION_0011_PATH = (
     / "versions"
     / "0011_backfill_protected_persons.py"
 )
+
+
+def _legacy_profiles_table(bind) -> sa.Table:
+    """Refleja `emergency_profiles` tal como existe en el schema pinneado
+    actual (p.ej. downgradeado a 0010), donde `device_id` todavía es una
+    columna real. No usar app.models.EmergencyProfile para esto: el modelo
+    vivo ya no mapea device_id (retirado en 0013)."""
+    metadata = sa.MetaData()
+    return sa.Table("emergency_profiles", metadata, autoload_with=bind)
+
+
+def _legacy_create_profile(
+    session, *, device_id, display_name: str, **overrides: object
+) -> EmergencyProfile:
+    """Inserta un EmergencyProfile legacy (con device_id) vía Core, y lo
+    devuelve leído por ORM (el modelo vivo puede seguir leyendo filas con
+    columnas no mapeadas de más, como device_id)."""
+    table = _legacy_profiles_table(session.get_bind())
+    profile_id = uuid4()
+    values: dict[str, object] = {
+        "id": profile_id,
+        "device_id": device_id,
+        "display_name": display_name,
+    }
+    values.update(overrides)
+    session.execute(table.insert().values(**values))
+    session.commit()
+    return session.get(EmergencyProfile, profile_id)
+
+
+def _legacy_get_profile_by_device_id(session, device_id) -> EmergencyProfile | None:
+    table = _legacy_profiles_table(session.get_bind())
+    row = session.execute(
+        select(table.c.id).where(table.c.device_id == device_id)
+    ).first()
+    if row is None:
+        return None
+    return session.get(EmergencyProfile, row.id)
+
+
+def _legacy_delete_profile_by_device_id(session, device_id) -> None:
+    table = _legacy_profiles_table(session.get_bind())
+    session.execute(sa.delete(table).where(table.c.device_id == device_id))
+
+
+def _legacy_clear_device_id(session, profile_id) -> None:
+    table = _legacy_profiles_table(session.get_bind())
+    session.execute(
+        sa.update(table).where(table.c.id == profile_id).values(device_id=None)
+    )
+
 
 # This whole file tests the 0011 migration itself (upgrade/downgrade round
 # trips against real data), not incidental fixture setup - every test but
@@ -130,7 +187,7 @@ def test_backfill_assigns_protected_person_id_to_legacy_profile(
         command.downgrade(cfg, "0010_add_protected_persons")
 
         session = session_factory()
-        profile = create_profile(session, device_id=device.id, display_name="Ana")
+        profile = _legacy_create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
         command.upgrade(cfg, "0011_backfill_protected_persons")
@@ -236,13 +293,13 @@ def test_legacy_backend_can_still_read_profile_by_device_id_after_backfill(
         command.downgrade(cfg, "0010_add_protected_persons")
 
         session = session_factory()
-        create_profile(session, device_id=device.id, display_name="Ana")
+        _legacy_create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
         command.upgrade(cfg, "0011_backfill_protected_persons")
 
         session = session_factory()
-        profile = get_profile_by_device_id(session, device.id)
+        profile = _legacy_get_profile_by_device_id(session, device.id)
         assert profile is not None
         assert profile.display_name == "Ana"
     finally:
@@ -266,8 +323,8 @@ def test_backfill_aborts_on_divergent_profiles_and_writes_nothing(
         command.downgrade(cfg, "0010_add_protected_persons")
 
         session = session_factory()
-        create_profile(session, device_id=device_a.id, display_name="Ana")
-        create_profile(session, device_id=device_b.id, display_name="Beatriz")
+        _legacy_create_profile(session, device_id=device_a.id, display_name="Ana")
+        _legacy_create_profile(session, device_id=device_b.id, display_name="Beatriz")
         session.close()
 
         with pytest.raises(Exception):
@@ -284,7 +341,7 @@ def test_backfill_aborts_on_divergent_profiles_and_writes_nothing(
         # el propio `command.upgrade(cfg, "head")` del finally volvería a
         # disparar el mismo fail-fast (correcto, pero rompería el cleanup
         # autouse de conftest, que necesita la DB en head al final del test).
-        session.execute(sa.delete(EmergencyProfile).where(EmergencyProfile.device_id == device_b.id))
+        _legacy_delete_profile_by_device_id(session, device_b.id)
         session.commit()
     finally:
         session.close()
@@ -306,7 +363,7 @@ def test_migration_round_trip_0010_to_0011_and_back(
         command.downgrade(cfg, "0010_add_protected_persons")
 
         session = session_factory()
-        profile = create_profile(session, device_id=device.id, display_name="Ana")
+        profile = _legacy_create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
         # upgrade 0010 -> 0011
@@ -339,7 +396,7 @@ def test_migration_round_trip_0010_to_0011_and_back(
         assert preserved is not None
         assert preserved.account_user_id == user.id
         # device_id-based legacy read still works after the round trip.
-        legacy_profile = get_profile_by_device_id(session, device.id)
+        legacy_profile = _legacy_get_profile_by_device_id(session, device.id)
         assert legacy_profile is not None
         assert legacy_profile.display_name == "Ana"
         session.close()
@@ -428,7 +485,7 @@ def test_soft_deleted_profile_receives_protected_person_id_when_ownership_determ
         command.downgrade(cfg, "0010_add_protected_persons")
 
         session = session_factory()
-        profile = create_profile(session, device_id=device.id, display_name="Ana")
+        profile = _legacy_create_profile(session, device_id=device.id, display_name="Ana")
         profile.deleted_at = datetime.now(UTC)
         session.commit()
         session.close()
@@ -465,10 +522,10 @@ def test_soft_deleted_divergent_sibling_does_not_block_migration_and_still_gets_
         command.downgrade(cfg, "0010_add_protected_persons")
 
         session = session_factory()
-        active_profile = create_profile(
+        active_profile = _legacy_create_profile(
             session, device_id=device_active.id, display_name="Ana"
         )
-        deleted_profile = create_profile(
+        deleted_profile = _legacy_create_profile(
             session, device_id=device_deleted.id, display_name="Nombre viejo distinto"
         )
         deleted_profile.deleted_at = datetime.now(UTC)
@@ -507,7 +564,7 @@ def test_downgrade_aborts_when_device_id_null_exists(
         command.downgrade(cfg, "0010_add_protected_persons")
 
         session = session_factory()
-        profile = create_profile(session, device_id=device.id, display_name="Ana")
+        profile = _legacy_create_profile(session, device_id=device.id, display_name="Ana")
         session.close()
 
         command.upgrade(cfg, "0011_backfill_protected_persons")
@@ -516,11 +573,7 @@ def test_downgrade_aborts_when_device_id_null_exists(
         # perfil account-scoped: device_id NULL, solo posible desde 0011 en
         # adelante porque la columna ya es nullable.
         session = session_factory()
-        session.execute(
-            sa.update(EmergencyProfile)
-            .where(EmergencyProfile.id == profile.id)
-            .values(device_id=None)
-        )
+        _legacy_clear_device_id(session, profile.id)
         session.commit()
         session.close()
 

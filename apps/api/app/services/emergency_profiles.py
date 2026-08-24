@@ -182,8 +182,8 @@ def put_account_profile(
 ) -> EmergencyProfile:
     """current_user -> get_or_create ProtectedPerson -> get_or_create su único
     EmergencyProfile activo -> actualizarlo. Un usuario sin Device puede crear
-    su perfil: device_id queda NULL, protected_person_id siempre queda
-    asignado.
+    su perfil: protected_person_id siempre queda asignado (EmergencyProfile no
+    tiene ninguna asociación directa a Device desde el Bloque 8.6).
 
     Invariante (uq_emergency_profiles_active_protected_person): a lo sumo un
     EmergencyProfile activo por ProtectedPerson. Dos PUT concurrentes pueden

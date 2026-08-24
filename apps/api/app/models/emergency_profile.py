@@ -36,9 +36,6 @@ class EmergencyProfile(Base):
     id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), primary_key=True, default=uuid4
     )
-    device_id: Mapped[UUID | None] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("devices.id"), nullable=True, unique=True
-    )
     protected_person_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("protected_persons.id"),

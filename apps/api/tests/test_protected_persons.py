@@ -15,8 +15,7 @@ from alembic.config import Config
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Device, EmergencyProfile, ProtectedPerson, User
-from app.repositories.emergency_profiles import create_profile
+from app.models import Device, ProtectedPerson, User
 from app.repositories.users import create_user
 from tests.conftest import assert_safe_test_database
 
@@ -68,30 +67,6 @@ def test_device_can_exist_with_null_protected_person_id(
         device = _create_device(session, user_id=user.id)
 
         assert device.protected_person_id is None
-    finally:
-        session.close()
-
-
-@pytest.mark.migration
-@pytest.mark.usefixtures("db_at_revision_0010")
-def test_existing_emergency_profile_flow_unaffected_by_protected_person_id(
-    session_factory: sessionmaker,
-) -> None:
-    """Bloque 1: en 0010 (protected_person_id recién agregado, opcional), el
-    flujo device_id-only preexistente sigue intacto. Desde 0012,
-    protected_person_id es NOT NULL en head, así que esta fixture solo puede
-    construirse contra el schema anterior a esa constraint."""
-    session = session_factory()
-    try:
-        user = create_user(
-            session, email=f"{uuid4().hex}@example.com", password_hash="not-a-real-hash"
-        )
-        device = _create_device(session, user_id=user.id)
-
-        profile = create_profile(session, device_id=device.id, display_name="Test")
-
-        assert profile.device_id == device.id
-        assert profile.protected_person_id is None
     finally:
         session.close()
 
