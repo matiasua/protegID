@@ -23,6 +23,19 @@ MAX_CLAIM_ATTEMPTS = 5
 CLAIM_LOCK_MINUTES = 15
 
 
+def _invalid_activation() -> HTTPException:
+    """Rechazo genérico de activación.
+
+    Usado uniformemente para public_id inexistente, Device no pending,
+    Device ya asignado, claim_code_hash ausente y claim code incorrecto:
+    el cliente no debe poder distinguir cuál de estas condiciones ocurrió
+    (enumeration hardening, ver D2)."""
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid activation data",
+    )
+
+
 @router.get("/api/devices", response_model=list[DeviceRead])
 def list_devices(session: SessionDep, current_user: CurrentUserDep):
     return get_devices_by_user_id(session, current_user.id)
@@ -51,22 +64,13 @@ def activate_device(
 
     device = get_device_by_public_id(session, payload.public_id)
     if device is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Identifier not available",
-        )
+        raise _invalid_activation()
 
     if device.status != "pending_activation" or device.user_id is not None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Identifier not available",
-        )
+        raise _invalid_activation()
 
     if device.claim_code_hash is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Identifier cannot be activated",
-        )
+        raise _invalid_activation()
 
     now = datetime.now(UTC)
     if device.claim_locked_until is not None and device.claim_locked_until > now:
@@ -80,10 +84,7 @@ def activate_device(
         if device.claim_attempts >= MAX_CLAIM_ATTEMPTS:
             device.claim_locked_until = now + timedelta(minutes=CLAIM_LOCK_MINUTES)
         session.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid activation data",
-        )
+        raise _invalid_activation()
 
     device.claimed_at = now
     device.claim_attempts = 0

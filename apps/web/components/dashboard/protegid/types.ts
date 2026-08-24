@@ -94,7 +94,11 @@ export function getDevicesErrorMessage(error: unknown): string {
 
 export function getActivationErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
-    if (error.status === 400) {
+    // 400 y 404 comparten mensaje: el backend ya no debería emitir 404 para
+    // credential/state mismatch en activación (D2, enumeration hardening),
+    // pero el frontend tampoco debe volver a distinguirlos si ocurriera
+    // (defense in depth).
+    if (error.status === 400 || error.status === 404) {
       return "Datos de activación inválidos.";
     }
 
@@ -104,10 +108,6 @@ export function getActivationErrorMessage(error: unknown): string {
 
     if (error.status === 403) {
       return EMAIL_VERIFICATION_REQUIRED_MESSAGE;
-    }
-
-    if (error.status === 404) {
-      return "Identificador no disponible.";
     }
 
     if (error.status === 422) {
