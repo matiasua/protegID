@@ -12,7 +12,7 @@ from app.repositories.devices import get_device_by_id, get_device_by_public_id, 
 from app.schemas.device import DeviceActivate, DeviceCreate, DeviceRead
 from app.schemas.emergency_profile import PublicAccessStatusRead
 from app.services.claim_codes import verify_claim_code
-from app.services.devices import activate_device_for_user, create_pending_device
+from app.services.devices import activate_device_for_user, create_pending_device, is_device_claimable
 from app.services.emergency_profile_canonical import CanonicalProfileDivergenceError
 from app.services.emergency_profiles import get_public_access_status_for_device
 from app.services.protected_persons import ProtectedPersonSoftDeletedError
@@ -66,7 +66,7 @@ def activate_device(
     if device is None:
         raise _invalid_activation()
 
-    if device.status != "pending_activation" or device.user_id is not None:
+    if not is_device_claimable(device):
         raise _invalid_activation()
 
     if device.claim_code_hash is None:
