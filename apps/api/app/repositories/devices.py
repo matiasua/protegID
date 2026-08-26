@@ -10,15 +10,36 @@ from app.models import Device
 
 
 def get_device_by_id(session: Session, device_id: UUID) -> Device | None:
-    return session.get(Device, device_id)
+    statement = select(Device).where(
+        Device.id == device_id, Device.deleted_at.is_(None)
+    )
+    return session.scalar(statement)
 
 
 def get_device_by_public_id(session: Session, public_id: str) -> Device | None:
-    statement = select(Device).where(Device.public_id == public_id)
+    statement = select(Device).where(
+        Device.public_id == public_id, Device.deleted_at.is_(None)
+    )
     return session.scalar(statement)
 
 
 def get_devices_by_user_id(session: Session, user_id: UUID) -> list[Device]:
+    statement = select(Device).where(
+        Device.user_id == user_id, Device.deleted_at.is_(None)
+    )
+    return list(session.scalars(statement))
+
+
+def get_device_by_id_including_deleted(session: Session, device_id: UUID) -> Device | None:
+    return session.get(Device, device_id)
+
+
+def get_device_by_public_id_including_deleted(session: Session, public_id: str) -> Device | None:
+    statement = select(Device).where(Device.public_id == public_id)
+    return session.scalar(statement)
+
+
+def get_devices_by_user_id_including_deleted(session: Session, user_id: UUID) -> list[Device]:
     statement = select(Device).where(Device.user_id == user_id)
     return list(session.scalars(statement))
 
