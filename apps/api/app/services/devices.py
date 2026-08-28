@@ -57,9 +57,7 @@ def create_pending_device(session: Session, label: str | None = None) -> Device:
 
 
 def is_device_claimable(device: Device) -> bool:
-    """True solo si el device puede ser reclamado vía POST /api/devices/activate.
-
-    No conectado a ningún endpoint todavía (Fase 4A)."""
+    """True solo si el device puede ser reclamado vía POST /api/devices/activate."""
     return (
         device.deleted_at is None
         and device.status == PENDING_ACTIVATION
@@ -84,6 +82,7 @@ def activate_device_for_user(session: Session, *, device: Device, user: User) ->
     device.protected_person_id = protected_person.id
     device.status = ACTIVE
     device.activated_at = datetime.now(UTC)
+    device.claim_code_hash = None
     session.commit()
     session.refresh(device)
     return device
