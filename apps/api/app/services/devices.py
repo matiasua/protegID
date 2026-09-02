@@ -10,7 +10,7 @@ from app.models import Device, User
 from app.repositories.devices import (
     create_device,
     get_device_by_id,
-    get_device_by_public_id,
+    get_device_by_public_id_including_deleted,
     update_device_status,
 )
 from app.services.device_ids import generate_public_id
@@ -67,7 +67,7 @@ class PublicIdGenerationError(RuntimeError):
 def generate_unique_public_id(session: Session) -> str:
     for _ in range(PUBLIC_ID_GENERATION_MAX_ATTEMPTS):
         public_id = generate_public_id()
-        if get_device_by_public_id(session, public_id) is None:
+        if get_device_by_public_id_including_deleted(session, public_id) is None:
             return public_id
 
     raise PublicIdGenerationError("Could not generate a unique device public_id")
