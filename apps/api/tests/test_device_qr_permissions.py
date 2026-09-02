@@ -1,8 +1,8 @@
 """Fase 4D-A: get_qr_permissions — matriz de permisos QR por status,
 precedencia absoluta de deleted_at, y fail-closed ante status desconocido.
 
-No conectado a ningún endpoint todavía; estos tests ejercitan la función
-directamente sobre instancias de Device en memoria (no persistidas).
+Estos tests ejercitan la función directamente sobre instancias de Device
+en memoria (no persistidas).
 """
 
 from datetime import UTC, datetime

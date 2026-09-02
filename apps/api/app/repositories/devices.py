@@ -1,6 +1,5 @@
 """Repositorio de dispositivos."""
 
-from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -59,15 +58,6 @@ def create_device(
         device_type=device_type,
     )
     session.add(device)
-    session.commit()
-    session.refresh(device)
-    return device
-
-
-def assign_device_to_user(session: Session, device: Device, user_id: UUID) -> Device:
-    device.user_id = user_id
-    device.status = "active"
-    device.activated_at = datetime.now(UTC)
     session.commit()
     session.refresh(device)
     return device
