@@ -369,6 +369,27 @@ def test_pending_but_already_assigned_device_returns_generic_rejection(
         session.close()
 
 
+def test_soft_deleted_device_returns_generic_rejection(
+    client: TestClient, make_authed_user, session_factory: sessionmaker
+) -> None:
+    """Un Device soft-deleted debe rechazarse igual que un public_id
+    inexistente: get_device_by_public_id ya lo excluye, por lo que llega
+    al mismo camino que "no encontrado"."""
+    authed = make_authed_user()
+    session = session_factory()
+    device, claim_code = create_pending_device_with_claim_code(session)
+    device.deleted_at = datetime.now(UTC)
+    session.add(device)
+    session.commit()
+    public_id = device.public_id
+    session.close()
+
+    response = _activate(client, authed, public_id, claim_code)
+
+    assert response.status_code == EXPECTED_STATUS
+    assert response.json() == EXPECTED_BODY
+
+
 def test_unauthenticated_request_returns_401(
     client: TestClient, session_factory: sessionmaker
 ) -> None:

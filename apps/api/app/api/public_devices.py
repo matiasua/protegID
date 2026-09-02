@@ -7,7 +7,7 @@ from app.core.rate_limit import check_rate_limit, get_client_ip
 from app.core.settings import get_settings
 from app.repositories.devices import get_device_by_public_id
 from app.schemas.device import DeviceActivationStatusRead
-from app.services.devices import PENDING_ACTIVATION
+from app.services.devices import is_device_claimable
 
 
 router = APIRouter(tags=["public-devices"])
@@ -37,7 +37,7 @@ def get_public_device_activation_status(
     )
 
     device = get_device_by_public_id(session, public_id)
-    if device is None or device.status != PENDING_ACTIVATION:
+    if device is None or not is_device_claimable(device):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Identifier not available",

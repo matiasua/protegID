@@ -42,6 +42,13 @@ def test_first_device_activation_creates_protected_person(
         assert protected_person is not None
         device = session.get(Device, device.id)
         assert device.protected_person_id == protected_person.id
+        assert device.status == "active"
+        assert device.user_id is not None
+        assert device.activated_at is not None
+        assert device.claimed_at is not None
+        assert device.claim_attempts == 0
+        assert device.claim_locked_until is None
+        assert device.claim_code_hash is None
     finally:
         session.close()
 
